@@ -1,0 +1,76 @@
+******************************************************
+RELEASE DATE:2025-07-23
+VERSION:2.4.2507.9231
+******************************************************
+
+NEW FEATURES / CHANGES
+=========================
+<License> 
+    Update third-party software open source licenses
+
+CORRECTIONS
+=========================
+
+******************************************************
+RELEASE DATE:2025-03-20
+VERSION:2.4.2503.9201
+******************************************************
+
+NEW FEATURES / CHANGES
+=========================
+<SDK> 
+    Synchronize all functions of the VC/NetCore6.0 SDK installation package for Windows 2.4.2501.9211, including:
+    1. Add string search function and interface layer information acquisition function.
+    2. Add interface layer related interfaces.
+    3. Added interfaces for sending action commands.
+    4. 64 bit platform support NetCore6.0 development SDK. 
+    5. Support logging function.
+    6. DxImageProc image processing module synchronous upgrade.
+     
+<doc>
+    1. Synchronize the content of the C manual and add the NetCore development manual.
+
+<sample> 
+    1. Replacing feature codes using string lookup function.
+    2. Add NetCore sample program.
+
+CORRECTIONS
+=========================
+
+******************************************************
+RELEASE DATE:2023-03-22
+VERSION:1.5.2303.9221
+******************************************************
+
+NEW FEATURES / CHANGES
+=========================
+<SDK> GxIAPI Library: add function code
+<SDK> DxImageProc Library: add DxReadLutFile interface
+<SDK> GxU3VTL: Fixed a color correction crash on Gige cameras using the image processing library
+
+CORRECTIONS
+=========================
+
+******************************************************
+RELEASE DATE:2022-08-08
+VERSION:1.4.2208.9081
+******************************************************
+
+NEW FEATURES / CHANGES
+=========================
+<SDK> GxIAPI Library: add "Contrast"function code
+<SDK> GxIAPI Library: Fix compilation error in pure C language environment
+
+
+******************************************************
+RELEASE DATE:2022-06-14
+VERSION:1.3.2206.9141
+******************************************************
+
+NEW FEATURES / CHANGES
+=========================
+<SDK> GxIAPI Library: add "StaticDefectCorrectionValueAll","StaticDefectCorrectionFlashValue","StaticDefectCorrectionFinish","StaticDefectCorrectionInfo","SensorDecimationHorizontal", "SensorDecimationVertical", "StripedCalibrationInfo"function code
+
+CORRECTIONS
+=========================
+<SDK> Gigabit Network Camera TL Library: solve the problem that the user-defined name cannot be written in Chinese

@@ -1,0 +1,101 @@
+# 저장 용량 계산
+
+3채널 동시 녹화 기준. 코덱은 **NVENC HW** 전제.  
+최종 코덱(H.265 vs H.264)은 Phase 4 프로파일링 후 확정 — 아래는 **양쪽 추정치** 모두 제시.
+
+## 1. 전제
+
+| 항목 | 값 |
+|------|-----|
+| 카메라 | 3대 (운영) |
+| 해상도 | 3840×2160 |
+| FPS | 23 |
+| 녹화 | 전 채널 동시, 이벤트 트리거 |
+| 인코딩 | Bayer → GPU debayer → NV12 → **NVENC** |
+| usable 용량 | `disk_total × STORAGE_FULL_PERCENTAGE / 100` (메타 ~5% 차감 권장) |
+
+> **연속 녹화(worst case):** 사람이 항상 검출되어 3채널이 끊김 없이 녹화될 때의 상한.  
+> 실제 운영은 이벤트 빈도에 따라 훨씬 길게 저장된다.
+
+## 2. Bitrate 가정 (4K@23fps, NVENC)
+
+| 품질 | H.264 (채널당) | H.265 (채널당) | 3채널 합산 |
+|------|----------------|----------------|-----------|
+| Standard | 12 Mbps | 8 Mbps | 36 / 24 Mbps |
+| High | 20 Mbps | 12 Mbps | 60 / 36 Mbps |
+| Very High | 35 Mbps | 20 Mbps | 105 / 60 Mbps |
+
+`.env` 추정용 (Phase 4 전 임시):
+
+```bash
+ENCODING_BITRATE_MBPS=12    # 채널당, H.265 high 기준
+# H.264 사용 시 ~20 권장
+```
+
+## 3. 계산식
+
+```
+usable_bytes = disk_total_bytes × (STORAGE_FULL_PERCENTAGE / 100) × 0.95
+
+total_bitrate_bps = ENCODING_BITRATE_MBPS × 1_000_000 × NUM_CAMERAS
+
+max_seconds = usable_bytes × 8 / total_bitrate_bps
+max_hours   = max_seconds / 3600
+max_days    = max_hours / 24
+```
+
+## 4. 예시 (`STORAGE_FULL_PERCENTAGE=90`, 메타 5% 차감)
+
+### H.265 (Phase 4 후보)
+
+| 디스크 | 품질 | 3ch 합산 | **최대 연속 녹화** |
+|--------|------|----------|-------------------|
+| 1 TB | Standard (24 Mbps) | 3.0 MB/s | **≈ 77시간 (3.2일)** |
+| 1 TB | High (36 Mbps) | 4.5 MB/s | **≈ 51시간 (2.1일)** |
+| 2 TB | High (36 Mbps) | 4.5 MB/s | **≈ 103시간 (4.3일)** |
+| 4 TB | High (36 Mbps) | 4.5 MB/s | **≈ 207시간 (8.6일)** |
+
+### H.264 (비교)
+
+| 디스크 | 품질 | 3ch 합산 | **최대 연속 녹화** |
+|--------|------|----------|-------------------|
+| 1 TB | Standard (36 Mbps) | 4.5 MB/s | **≈ 51시간 (2.1일)** |
+| 1 TB | High (60 Mbps) | 7.5 MB/s | **≈ 31시간 (1.3일)** |
+| 2 TB | High (60 Mbps) | 7.5 MB/s | **≈ 62시간 (2.6일)** |
+| 4 TB | High (60 Mbps) | 7.5 MB/s | **≈ 124시간 (5.2일)** |
+
+동일 화질 기준 H.265가 용량 30~50% 절감. Phase 4에서 GPU 부하와 함께 최종 선택.
+
+## 5. Pre-buffer RAM (Bayer, 녹화와 별도)
+
+```
+1 frame  ≈ 3840 × 2160 = 8.3 MB (Bayer8)
+1 camera = 23 fps × RECORDING_BUFFER_SEC
+3 cameras ≈ 8.3 MB × 230 × 3 = 5.7 GB  (10초 buffer)
+```
+
+32GB RAM에서 수용 가능. Phase 4 실측 필수.
+
+## 6. 이벤트 기반 실사용 (참고)
+
+```
+effective_days ≈ max_continuous_days / duty_cycle
+duty_cycle     = (하루 실제 녹화 시간) / 86400
+```
+
+예: worst 4.3일(2TB H.265 high), 하루 2시간만 3ch 녹화 → `4.3 / (2/24) ≈ 52일`
+
+## 7. Phase 4 연동
+
+코덱 결정 후:
+
+1. `.env` `ENCODING_CODEC`, `ENCODING_BITRATE_MBPS` 확정
+2. StorageManager에 잔여 녹화 시간 추정 로직 반영
+3. 본 문서 표 갱신
+
+상세 절차: `00_project_plan.md` Phase 4 §4.1
+
+## 8. 관련 문서
+
+- `00_project_plan.md`
+- `01_sdk_feasibility.md` — debayer → NVENC

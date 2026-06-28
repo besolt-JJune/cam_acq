@@ -1,0 +1,59 @@
+# Local environment (secrets)
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# C/C++ build artifacts
+native/**/build/
+cmake-build-*/
+*.o
+*.a
+
+# ML models (build on target GPU)
+models/*.engine
+models/*.onnx
+models/*.pt
+models/*.weights
+
+# Recordings, samples, runtime data
+samples/
+recordings/
+/data/
+*.mp4
+*.mkv
+*.avi
+*.raw
+
+# Logs & healthcheck output
+logs/
+*.log
+
+# Cursor (mcp.json may contain API keys)
+.cursor/mcp.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
