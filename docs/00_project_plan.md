@@ -128,6 +128,7 @@
 | 3.5 | nvinfer meta → `RecordingTrigger` | ✅ `gst_meta.py` probe | 추후 (pyds + 사람) |
 | 3.6 | GPU debayer (Phase 3 경로) | ✅ `gpu_phase3` in yolo-live | `DEBAYER_MODE=gpu_phase3` |
 | 3.x | **3ch 전환** (`NUM_CAMERAS=3`) | **추후** | `11_field_pending_work.md` §5 |
+| 3.y | per-camera 혼합 debayer (GPU 2 + CPU 1) | **추후 선택** | `12_debayer_3ch_strategy.md` §4 — §5 실측 FAIL 시에만 |
 
 **Phase 3 코드 완료.** 남은 항목은 `11_field_pending_work.md` §6 현장 검증.
 

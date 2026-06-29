@@ -89,9 +89,15 @@ echo exit=$?
 
 ---
 
-## 5. 추후 — NUM_CAMERAS=3 (지금 진행하지 않음)
+## 5. 추후 — NUM_CAMERAS=3 (cam2 연결 후 실측)
 
-3번째 카메라·NIC 연결 후 일괄 전환. 2대 환경에서는 아래를 **실행하지 않는다**.
+3번째 카메라·NIC 연결 후 일괄 전환. YOLO live는 **전 채널 `gpu_phase3` 실측** (`12_debayer_3ch_strategy.md` §5).  
+GPU 2ch + CPU 1ch 혼합 debayer는 **추후 선택** — §7.
+
+### 5.0 선행 조건
+
+- `CAMERA2_IP` / `CAMERA2_INTERFACE` 연결 확인
+- cam2 grab PASS 후 YOLO·debayer 비교 진행
 
 ### 5.1 3대 camera grab (Phase 2.1)
 
@@ -110,6 +116,8 @@ uv run python -m cam_acq.tools.grab_healthcheck \
 
 **통과:** 3채널 `fps_avg ≥ 22`, `frame_drops=0`
 
+**2026-06-29 시도:** cam0/1 PASS, cam2 (`10.10.2.3`) open 실패 — `healthcheck/report_3cam_grab.json`
+
 ### 5.2 YOLO / DeepStream 3ch
 
 ```bash
@@ -117,6 +125,15 @@ uv run cam-acq-build-yolo --env-file .env --variant person --batch-size 3
 # → models/yolov8m_person_b3_gpu0_fp16.engine
 # nvinfer batch-size=3, deepstream num-sources=3 (config 별도 추가)
 ```
+
+```bash
+# 전부 gpu_phase3 (결정 전 baseline)
+DEBAYER_MODE=gpu_phase3 uv run cam-acq-yolo-live \
+  --duration 60 --no-record --no-event-recording \
+  --output ./healthcheck/yolo_live_3ch_gpu.json
+```
+
+통과 기준·인코딩 debayer: `12_debayer_3ch_strategy.md` §5. 혼합 debayer(§7)는 **3ch gpu_phase3 실측 FAIL 시에만** 검토.
 
 ### 5.3 1시간 soak (3대)
 
@@ -243,8 +260,24 @@ uv run cam-acq-memory-profile --output ./healthcheck/memory_profile.json
 
 ---
 
+## 7. 추후 선택 — GPU 2ch + CPU 1ch 혼합 live debayer
+
+**지금 진행하지 않음.** 3ch 전부 `gpu_phase3` 실측(§5)이 목표 fps에 **미달**할 때만 채택 여부를 결정한다.
+
+| 항목 | 내용 |
+|------|------|
+| 목적 | YOLO live 경로에서 GPU debayer 2체인 + CPU SDK 1ch (cam2 다른 조합 4K) |
+| 전제 | per-camera `DEBAYER_MODE`, `gst_live` 혼합 파이프라인 — **미구현** |
+| 녹화 | 영향 없음 — encode는 항상 `gst_encode.bayer2rgb` (GPU) |
+| 상세 | `12_debayer_3ch_strategy.md` §4·§7 |
+
+채택 시: `12_debayer_3ch_strategy.md` §5.4 혼합 `cam-acq-yolo-live` 검증 추가.
+
+---
+
 ## 4. 관련 문서
 
 - `08_ssh_healthcheck_guide.md` — CLI 옵션, 리포트 형식
 - `09_network_topology.md` — 3대 NIC / IP
+- `12_debayer_3ch_strategy.md` — encode debayer, 3ch GPU/CPU 논의·실측 절차
 - `00_project_plan.md` — Phase 계획

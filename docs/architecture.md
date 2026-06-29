@@ -30,21 +30,20 @@ flowchart TB
         CM --> TSM --> GRAB --> RB
     end
 
-    subgraph ds [DeepStream GPU]
-        DEBAYER[nvvideoconvert\nBayer→NV12]
-        PRE[Resize]
+    subgraph ds [DeepStream GPU — YOLO live]
+        LIVE_DEBAYER["live debayer\ncpu_sdk | gpu_phase3\n(bayer2rgb→scale)"]
         YOLO[YOLOv8m nvinfer]
-        RB --> DEBAYER
-        RB --> PRE --> YOLO
+        GRAB --> LIVE_DEBAYER --> YOLO
     end
 
     subgraph rec [Recording]
         RC[RecordingController\n전 채널 동시]
-        ENC[NVENC HW\nH.265 or H.264]
+        ENC_DEBAYER["encode debayer\nbayer2rgb → cudaupload"]
+        ENC[NVENC HW\nnvcuda h264/h265]
         META["Metadata\n.json + .frames.jsonl"]
         YOLO -->|trigger| RC
-        DEBAYER --> RC
-        RC --> ENC --> META
+        RB --> RC
+        RC --> ENC_DEBAYER --> ENC --> META
         META --> STOR[(STORAGE_PATH\nor STORAGE_PATH_SUB)]
         SM[StorageManager\nFIFO + path fallback]
         STOR --> SM
@@ -54,7 +53,6 @@ flowchart TB
         COL[Data Collector\n수신 FPS 23]
         SYS[Host Metrics\nCPU RAM GPU temp]
         WEB[Dashboard\n≤ UI_MAX_DISPLAY_FPS]
-        PRE -->|resize only| COL
         YOLO --> COL
         CM --> COL
         SM --> COL
@@ -75,8 +73,11 @@ flowchart TB
 Camera (Bayer 4K)
   → TimeSyncManager (세션 시작: TimestampReset + host_t0 앵커)
   → Grab Thread
-  → RAM Ring Buffer (pre-buffer, Bayer raw)
-  → nvvideoconvert (resize branch) → YOLOv8m
+  → RAM Ring Buffer (pre-buffer, Bayer raw)     ← 녹화용
+  → live debayer (DEBAYER_MODE) + resize       ← YOLO용 (ring과 별 경로)
+       cpu_sdk: SDK convert("RGB") + resize
+       gpu_phase3: Bayer → GStreamer bayer2rgb → scale → nvvideoconvert
+  → YOLOv8m nvinfer
   → detection event (bbox_resized → bbox_original)
 ```
 
@@ -86,12 +87,15 @@ Camera (Bayer 4K)
 
 ```
 RAM Ring Buffer (Bayer 4K, pre+event+post)
-  → GPU debayer (nvvideoconvert) → NV12 4K
-  → NVENC (H.265 or H.264, HW)
+  → appsrc (video/x-bayer)
+  → bayer2rgb (GPU demosaic)        ← encode debayer; live DEBAYER_MODE와 무관
+  → videoconvert → cudaupload
+  → nvcudah264enc | nvcudah265enc
   → .mp4 + .json + .frames.jsonl → STORAGE_PATH (불가 시 STORAGE_PATH_SUB)
 ```
 
-**Bayer를 NVENC에 직접 넣지 않는다.**
+**Bayer를 NVENC에 직접 넣지 않는다** — raw Bayer를 압축하면 복원 시 demosaic 없이 픽셀이 깨진다.  
+구현: `recording/gst_encode.py`. 3ch debayer·GPU/CPU 분산 논의: `12_debayer_3ch_strategy.md`.
 
 녹화 pre/post window는 **호스트 monotonic** 기준 (3채널 동시 trigger). PTP 없음.
 
@@ -173,3 +177,4 @@ NVENC HW로 H.265 vs H.264 프로파일링 후 `.env` 확정.
 | `08_ssh_healthcheck_guide.md` | 원격 검증 |
 | `09_network_topology.md` | 시간 동기화, NIC |
 | `10_monitoring_design.md` | Dashboard, host metrics |
+| `12_debayer_3ch_strategy.md` | YOLO vs encode debayer, 3ch GPU/CPU 논의·실측 |
