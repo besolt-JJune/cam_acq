@@ -50,6 +50,13 @@ class SessionTimeSync:
         t = time.monotonic() if t_monotonic is None else t_monotonic
         return int((t - self.host_t0_monotonic) * 1_000_000)
 
+    def monotonic_us_to_epoch(self, mono_us: int) -> float:
+        """Map absolute ``time.monotonic()*1e6`` to POSIX epoch via session wall anchor."""
+        t0 = datetime.fromisoformat(self.host_t0_wall)
+        if t0.tzinfo is None:
+            t0 = t0.replace(tzinfo=timezone.utc)
+        return t0.timestamp() + (mono_us / 1_000_000 - self.host_t0_monotonic)
+
     def to_dict(self) -> dict:
         """JSON-serializable report block."""
         return {

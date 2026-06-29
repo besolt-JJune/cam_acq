@@ -138,17 +138,17 @@
 ### Phase 4 — Recording
 
 
-| ID  | 작업                                               |
-| --- | ------------------------------------------------ |
-| 4.1 | Full 4K Bayer pre-buffer (RAM ring)              |
-| 4.2 | **녹화 경로: Bayer → GPU debayer → NV12 → NVENC**    |
-| 4.3 | Human detection + 수동 trigger                     |
-| 4.4 | post-buffer (`RECORDING_BUFFER_SEC`)             |
-| 4.5 | Split recording (`RECORDING_SPLIT_INTERVAL_SEC`) |
-| 4.6 | **코덱 결정: NVENC H.265 vs H.264 프로파일링** (§4.1)     |
-| 4.7 | 메타데이터 (`.json` + `.frames.jsonl`)                |
-| 4.8 | StorageManager (FIFO, `STORAGE_PATH` / `STORAGE_PATH_SUB` fallback) |
-| 4.9 | RAM/VRAM 실측 (32GB / 16GB)                        |
+| ID  | 작업 | 코드 | 검증 |
+| --- | ------------------------------------------------ | --- | --- |
+| 4.1 | Full 4K Bayer pre-buffer (RAM ring) | ✅ `recording/buffer.py` | ✅ unit |
+| 4.2 | Bayer → debayer → NVENC | ✅ `recording/gst_encode.py` (`bayer2rgb` + `cudaupload` + `nvcuda*enc`) | `cam-acq-record-test` ✅ |
+| 4.3 | Human detection + 수동 trigger | ✅ `RecordingTrigger` + `record_test` | 추후 YOLO 통합 |
+| 4.4 | post-buffer (`RECORDING_BUFFER_SEC`) | ✅ `RecordingController` | `cam-acq-record-test` |
+| 4.5 | Split recording | ✅ segment split in controller | `cam-acq-record-test` |
+| 4.6 | H.265 vs H.264 프로파일링 | **추후** | `.env` `ENCODING_CODEC` |
+| 4.7 | 메타데이터 (`.json` + `.frames.jsonl`) | ✅ `recording/metadata.py` | `cam-acq-record-test` |
+| 4.8 | StorageManager (FIFO, fallback) | ✅ `recording/storage.py` | ✅ unit |
+| 4.9 | RAM/VRAM 실측 | **추후** | `record_test` 리포트 `ring_memory_bytes` |
 
 
 #### 4.1 코덱 결정 절차 (H.265 vs H.264)

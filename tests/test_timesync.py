@@ -31,8 +31,22 @@ def test_session_to_dict_keys():
     assert "cameras" in d
 
 
+def test_monotonic_us_to_epoch():
+    session = SessionTimeSync(
+        strategy="host_clock_sync",
+        host_t0_monotonic=100.0,
+        host_t0_wall="2026-01-01T00:00:00+00:00",
+        timestamp_reset_on_session=True,
+        cross_camera_skew_tolerance_ms=50,
+        anchors=(),
+    )
+    assert session.monotonic_us_to_epoch(100_000_000) == 0.0
+    assert session.monotonic_us_to_epoch(101_000_000) == 1.0
+
+
 if __name__ == "__main__":
     test_tick_to_us_1ghz()
     test_max_cross_camera_skew()
     test_session_to_dict_keys()
+    test_monotonic_us_to_epoch()
     print("ok")

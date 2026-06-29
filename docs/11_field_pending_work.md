@@ -164,6 +164,30 @@ jq '.detection' ./healthcheck/yolo_live_trigger.json
 
 `.env` `DEBAYER_MODE=gpu_phase3` — **미구현** (인터페이스만). 녹화용 GPU debayer는 Phase 4 (`gpu_phase4`).
 
+### 6.6 Phase 4 수동 trigger 녹화 (4.2~4.8)
+
+카메라 2대 + `STORAGE_PATH` 마운트 후:
+
+```bash
+export LD_LIBRARY_PATH=$PWD/sdk/Galaxy_camera/c/lib/x86_64:$LD_LIBRARY_PATH
+# duration >= trigger_at + 2×RECORDING_BUFFER_SEC (예: buffer 5s, trigger 8s → duration 28)
+uv run cam-acq-record-test --duration 28 --trigger-at 8 --output ./healthcheck/record_test.json
+```
+
+PASS 조건: JSON `status`=`PASS`, `segments[]`에 cam0/cam1 MP4·`.json`·`.frames.jsonl` 경로, `ring_memory_bytes` 기록.
+
+GPU encode 단독 smoke (`GST_ENCODE_TEST=1`):
+
+```bash
+GST_ENCODE_TEST=1 uv run python tests/test_recording.py
+```
+
+**참고:** `nvv4l2h264enc`+Bayer 4K 경로는 segfault — `gst_encode.py`는 `nvcudah264enc`/`nvcudah265enc` 사용.
+
+### 6.7 YOLO live + 자동 trigger 녹화 (4.3 E2E)
+
+`cam-acq-yolo-live`와 `RecordingController` 통합 — **미구현** (수동 trigger는 `cam-acq-record-test`로 검증).
+
 ---
 
 ## 4. 관련 문서

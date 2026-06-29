@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""Phase 4 manual trigger recording test (2ch Bayer ring → NVENC MP4)."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import threading
+import time
+from pathlib import Path
+
+# gi + numpy init order (see deepstream_yolo_live.py)
+from cam_acq.detection.gst_live import DeepStreamYoloLive  # noqa: F401
+
+from cam_acq.camera.device import close_camera, open_camera_by_ip
+from cam_acq.camera.timesync import TimeSyncManager
+from cam_acq.config import NOMINAL_FPS, load_settings, setup_galaxy_lib_path
+from cam_acq.detection.events import RecordingTrigger
+from cam_acq.recording.controller import RecordingController
+from cam_acq.recording.storage import StorageManager
+from gxipy.gxidef import GxFrameStatusList, GxSwitchEntry
+
+
+def _grab_to_controller(
+    *,
+    ip: str,
+    camera_index: int,
+    controller: RecordingController,
+    stop_at: float,
+    errors: list[str],
+) -> None:
+    """Grab Bayer frames into the recording ring buffer."""
+    cam = None
+    try:
+        cam = open_camera_by_ip(ip)
+        cam.TriggerMode.set(GxSwitchEntry.OFF)
+        cam.stream_on()
+        while time.monotonic() < stop_at:
+            raw = cam.data_stream[0].get_image(timeout=1000)
+            if raw is None:
+                continue
+            if raw.get_status() != GxFrameStatusList.SUCCESS:
+                continue
+            controller.push_raw(camera_index, raw)
+    except Exception as exc:
+        errors.append(f"cam{camera_index}: {exc}")
+    finally:
+        if cam is not None:
+            try:
+                cam.stream_off()
+            except Exception:
+                pass
+        close_camera(cam)
+
+
+def run_record_test(
+    *,
+    duration_sec: float,
+    trigger_at_sec: float,
+    env_file: Path | None,
+    output_json: Path | None,
+) -> int:
+    """Fill rings, fire manual trigger, encode after post-buffer."""
+    settings = load_settings(env_file)
+    setup_galaxy_lib_path()
+
+    storage = StorageManager(
+        settings.storage_path,
+        settings.storage_path_sub,
+        management=settings.storage_management,
+        full_percentage=settings.storage_full_percentage,
+    )
+    controller = RecordingController(
+        storage=storage,
+        camera_indices=settings.camera_indices,
+        buffer_sec=settings.recording_buffer_sec,
+        split_interval_sec=settings.recording_split_interval_sec,
+        pixel_format=settings.pixel_format,
+        codec=settings.encoding_codec,
+        bitrate_bps=int(settings.encoding_bitrate_mbps * 1_000_000),
+        gpu_id=settings.gpu_id,
+    )
+    trigger = RecordingTrigger(
+        buffer_sec=settings.recording_buffer_sec,
+        confidence_threshold=settings.detection_confidence,
+        camera_indices=settings.camera_indices,
+    )
+
+    time_sync = TimeSyncManager().begin_session(
+        settings.cameras,
+        timestamp_reset=settings.timestamp_reset_on_session,
+    )
+
+    stop_at = time.monotonic() + duration_sec
+    trigger_at = time.monotonic() + trigger_at_sec
+    errors: list[str] = []
+    threads = [
+        threading.Thread(
+            target=_grab_to_controller,
+            kwargs={
+                "ip": cam.ip,
+                "camera_index": cam.index,
+                "controller": controller,
+                "stop_at": stop_at,
+                "errors": errors,
+            },
+            daemon=True,
+        )
+        for cam in settings.cameras
+    ]
+    for t in threads:
+        t.start()
+
+    decision = None
+    while time.monotonic() < stop_at:
+        if decision is None and time.monotonic() >= trigger_at:
+            decision = trigger.manual_trigger()
+            controller.schedule_trigger(decision)
+        if controller.pending_ready():
+            break
+        time.sleep(0.05)
+
+    for t in threads:
+        t.join(timeout=5.0)
+
+    segments = controller.flush_pending(time_sync=time_sync)
+    if errors:
+        print("\n".join(errors), file=sys.stderr)
+
+    report = {
+        "schema_version": "1.0",
+        "status": "PASS" if segments and not errors else "FAIL",
+        "duration_sec": duration_sec,
+        "trigger_at_sec": trigger_at_sec,
+        "buffer_sec": settings.recording_buffer_sec,
+        "codec": settings.encoding_codec,
+        "storage": {
+            "path": str(storage.location.path),
+            "is_fallback": storage.location.is_fallback,
+            "primary_path": str(settings.storage_path),
+            "primary_reject_reason": storage.primary_reject_reason,
+            "usage_ratio": round(storage.usage_ratio(), 4),
+        },
+        "ring_memory_bytes": controller.memory_report(),
+        "segments": [
+            {
+                "camera_index": s.camera_index,
+                "segment_index": s.segment_index,
+                "video": str(s.video_path),
+                "session": str(s.session_path),
+                "frames": str(s.frames_path),
+                "frame_count": s.frame_count,
+            }
+            for s in segments
+        ],
+        "trigger": decision.as_dict() if decision else None,
+        "time_sync": time_sync.to_dict(),
+    }
+    if output_json:
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        output_json.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(report, indent=2))
+    return 0 if report["status"] == "PASS" else 1
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Manual trigger recording test (Phase 4)")
+    parser.add_argument("--env-file", type=Path, default=None)
+    parser.add_argument("--duration", type=float, default=35.0, help="total grab seconds")
+    parser.add_argument(
+        "--trigger-at",
+        type=float,
+        default=10.0,
+        help="manual trigger after N seconds",
+    )
+    parser.add_argument("--output", type=Path, default=Path("healthcheck/record_test.json"))
+    args = parser.parse_args()
+    if args.duration < args.trigger_at + 2:
+        print("duration must allow pre+post buffer after trigger", file=sys.stderr)
+        return 1
+    return run_record_test(
+        duration_sec=args.duration,
+        trigger_at_sec=args.trigger_at,
+        env_file=args.env_file,
+        output_json=args.output,
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,103 @@
+"""Recording ring buffer and storage self-check (no camera/GPU)."""
+
+import tempfile
+from pathlib import Path
+
+from cam_acq.recording.buffer import BayerRingBuffer, BufferedFrame, ring_capacity_frames
+from cam_acq.recording.storage import StorageManager
+
+
+def test_ring_window():
+    buf = BayerRingBuffer(5)
+    for i in range(7):
+        buf.push(
+            BufferedFrame(
+                frame_id=i,
+                timestamp_tick=i * 1000,
+                host_recv_us=i * 1_000_000,
+                width=4,
+                height=2,
+                data=bytes([i]),
+            )
+        )
+    win = buf.frames_in_host_window(2_000_000, 5_999_999)
+    assert [f.frame_id for f in win] == [2, 3, 4, 5]
+
+
+def test_ring_capacity_formula():
+    assert ring_capacity_frames(23.0, 10.0) >= 690
+
+
+def test_storage_fallback():
+    with tempfile.TemporaryDirectory() as tmp:
+        primary = Path(tmp) / "blocked_file"
+        primary.write_text("x", encoding="utf-8")
+        fallback = Path(tmp) / "ok"
+        sm = StorageManager(primary, fallback)
+        assert sm.location.is_fallback
+        assert sm.location.path == fallback
+
+
+def test_basename_same_timestamp_across_cameras():
+    """All channels in one segment share the same wall-clock prefix."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sm = StorageManager(Path(tmp) / "primary", Path(tmp) / "sub")
+        when = 1_719_600_000.0
+        b0 = sm.make_basename(camera_index=0, segment_index=0, when=when)
+        b1 = sm.make_basename(camera_index=1, segment_index=0, when=when)
+        assert b0.partition("_cam")[0] == b1.partition("_cam")[0]
+        assert b0.endswith("_cam0_seg00")
+        assert b1.endswith("_cam1_seg00")
+
+
+def test_storage_fifo_cleanup_api():
+    """RecordingController.flush_pending calls maybe_fifo_cleanup before encode."""
+    with tempfile.TemporaryDirectory() as tmp:
+        sm = StorageManager(Path(tmp) / "primary", Path(tmp) / "sub")
+        assert callable(getattr(sm, "maybe_fifo_cleanup", None))
+        assert sm.maybe_fifo_cleanup() == 0
+
+
+def test_encode_bayer_mp4_optional():
+    """GPU encode smoke test; skipped unless GST_ENCODE_TEST=1."""
+    import os
+
+    if os.getenv("GST_ENCODE_TEST") != "1":
+        return
+    from cam_acq.detection.gst_live import DeepStreamYoloLive  # noqa: F401 — gi before gxipy
+    from cam_acq.recording.gst_encode import encode_bayer_frames_to_mp4
+
+    w, h = 3840, 2160
+    frames = [
+        BufferedFrame(
+            frame_id=i,
+            timestamp_tick=i * 1000,
+            host_recv_us=i * 1_000_000,
+            width=w,
+            height=h,
+            data=bytes(w * h),
+        )
+        for i in range(3)
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "clip.mp4"
+        encode_bayer_frames_to_mp4(
+            frames,
+            output_path=out,
+            pixel_format="BayerRG8",
+            fps=23.0,
+            codec="H264",
+            bitrate_bps=4_000_000,
+            gpu_id=0,
+        )
+        assert out.stat().st_size > 1000
+
+
+if __name__ == "__main__":
+    test_ring_window()
+    test_ring_capacity_formula()
+    test_storage_fallback()
+    test_basename_same_timestamp_across_cameras()
+    test_storage_fifo_cleanup_api()
+    test_encode_bayer_mp4_optional()
+    print("ok")

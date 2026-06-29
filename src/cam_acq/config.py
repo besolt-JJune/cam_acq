@@ -74,6 +74,13 @@ class Settings:
     detection_confidence: float
     detection_input_size: int
     recording_buffer_sec: float
+    recording_split_interval_sec: float
+    encoding_codec: str
+    encoding_bitrate_mbps: float
+    storage_path: Path
+    storage_path_sub: Path
+    storage_management: str
+    storage_full_percentage: int
     debayer_backend: DebayerBackend
     gpu_id: int
     deepstream_yolo_lib: Path
@@ -152,6 +159,13 @@ def load_settings(env_file: Path | None = None) -> Settings:
         detection_confidence=_env_float("DETECTION_CONFIDENCE", 0.5),
         detection_input_size=_env_int("DETECTION_INPUT_SIZE", 640),
         recording_buffer_sec=_env_float("RECORDING_BUFFER_SEC", 10.0),
+        recording_split_interval_sec=_env_float("RECORDING_SPLIT_INTERVAL_SEC", 60.0),
+        encoding_codec=os.getenv("ENCODING_CODEC", "H265").upper(),
+        encoding_bitrate_mbps=_env_float("ENCODING_BITRATE_MBPS", 12.0),
+        storage_path=Path(os.getenv("STORAGE_PATH", "./recordings")),
+        storage_path_sub=Path(os.getenv("STORAGE_PATH_SUB", "./recordings")),
+        storage_management=os.getenv("STORAGE_MANAGEMENT", "FIFO_DELETE"),
+        storage_full_percentage=_env_int("STORAGE_FULL_PERCENTAGE", 90),
         debayer_backend=parse_debayer_backend(os.getenv("DEBAYER_MODE", DebayerBackend.CPU_SDK.value)),
         gpu_id=_env_int("GPU_ID", 0),
         deepstream_yolo_lib=Path(
