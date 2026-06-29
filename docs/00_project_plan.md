@@ -142,7 +142,7 @@
 | --- | ------------------------------------------------ | --- | --- |
 | 4.1 | Full 4K Bayer pre-buffer (RAM ring) | ✅ `recording/buffer.py` | ✅ unit |
 | 4.2 | Bayer → debayer → NVENC | ✅ `recording/gst_encode.py` (`bayer2rgb` + `cudaupload` + `nvcuda*enc`) | `cam-acq-record-test` ✅ |
-| 4.3 | Human detection + 수동 trigger | ✅ `RecordingTrigger` + `record_test` | 추후 YOLO 통합 |
+| 4.3 | Human detection + auto trigger | ✅ `yolo-live` + `RecordingController` | **추후** (사람 walk-through E2E) |
 | 4.4 | post-buffer (`RECORDING_BUFFER_SEC`) | ✅ `RecordingController` | `cam-acq-record-test` |
 | 4.5 | Split recording | ✅ segment split in controller | `cam-acq-record-test` |
 | 4.6 | H.265 vs H.264 프로파일링 | **추후** | `.env` `ENCODING_CODEC` |

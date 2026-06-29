@@ -19,6 +19,8 @@ from cam_acq.detection.pyds_loader import import_pyds
 if TYPE_CHECKING:
     from gi.repository import Gst
 
+    from cam_acq.recording.controller import RecordingController
+
 
 @dataclass
 class LiveDetectionBridge:
@@ -30,6 +32,7 @@ class LiveDetectionBridge:
     camera_h: int
     confidence_threshold: float
     trigger: RecordingTrigger
+    recording: RecordingController | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     frames_with_meta: int = 0
     person_frame_hits: int = 0
@@ -117,11 +120,15 @@ def make_nvinfer_src_probe(bridge: LiveDetectionBridge) -> Callable[..., Any]:
                 bridge.frames_with_meta += 1
                 if event.has_person:
                     bridge.person_frame_hits += 1
+                if bridge.recording is not None:
+                    bridge.recording.note_detection(event)
                 decision: TriggerDecision | None = bridge.trigger.on_detection(
                     event, host_recv_us=host_us
                 )
                 if decision is not None:
                     bridge.trigger_decisions.append(decision.as_dict())
+                    if bridge.recording is not None:
+                        bridge.recording.schedule_trigger(decision)
             try:
                 l_frame = l_frame.next
             except StopIteration:

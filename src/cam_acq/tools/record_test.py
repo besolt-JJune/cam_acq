@@ -13,16 +13,15 @@ from pathlib import Path
 # gi + numpy init order (see deepstream_yolo_live.py)
 from cam_acq.detection.gst_live import DeepStreamYoloLive  # noqa: F401
 
-from cam_acq.camera.device import close_camera, open_camera_by_ip
 from cam_acq.camera.timesync import TimeSyncManager
 from cam_acq.config import NOMINAL_FPS, load_settings, setup_galaxy_lib_path
 from cam_acq.detection.events import RecordingTrigger
 from cam_acq.recording.controller import RecordingController
+from cam_acq.recording.grab import run_camera_grab_loop
 from cam_acq.recording.storage import StorageManager
-from gxipy.gxidef import GxFrameStatusList, GxSwitchEntry
 
 
-def _grab_to_controller(
+def _run_grab(
     *,
     ip: str,
     camera_index: int,
@@ -30,28 +29,17 @@ def _grab_to_controller(
     stop_at: float,
     errors: list[str],
 ) -> None:
-    """Grab Bayer frames into the recording ring buffer."""
-    cam = None
+    """Thread target: Bayer-only grab into recording ring."""
     try:
-        cam = open_camera_by_ip(ip)
-        cam.TriggerMode.set(GxSwitchEntry.OFF)
-        cam.stream_on()
-        while time.monotonic() < stop_at:
-            raw = cam.data_stream[0].get_image(timeout=1000)
-            if raw is None:
-                continue
-            if raw.get_status() != GxFrameStatusList.SUCCESS:
-                continue
-            controller.push_raw(camera_index, raw)
-    except Exception as exc:
-        errors.append(f"cam{camera_index}: {exc}")
-    finally:
-        if cam is not None:
-            try:
-                cam.stream_off()
-            except Exception:
-                pass
-        close_camera(cam)
+        run_camera_grab_loop(
+            ip=ip,
+            camera_index=camera_index,
+            stop_at=stop_at,
+            controller=controller,
+            errors=errors,
+        )
+    except Exception:
+        pass
 
 
 def run_record_test(
@@ -97,7 +85,7 @@ def run_record_test(
     errors: list[str] = []
     threads = [
         threading.Thread(
-            target=_grab_to_controller,
+            target=_run_grab,
             kwargs={
                 "ip": cam.ip,
                 "camera_index": cam.index,

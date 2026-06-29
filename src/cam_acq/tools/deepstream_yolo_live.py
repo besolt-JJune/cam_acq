@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live 2ch GigE → DeepStream YOLO (appsrc) with optional overlay MP4."""
+"""Live 2ch GigE → DeepStream YOLO (appsrc) with optional overlay MP4 and event recording."""
 
 from __future__ import annotations
 
@@ -16,11 +16,13 @@ from pathlib import Path
 from cam_acq.detection.gst_live import DeepStreamYoloLive
 from cam_acq.detection.gst_meta import LiveDetectionBridge
 
-from cam_acq.camera.device import close_camera, open_camera_by_ip
-from cam_acq.camera.frame import DebayerBackend, raw_image_to_frame
+from cam_acq.camera.frame import DebayerBackend
+from cam_acq.camera.timesync import SessionTimeSync, TimeSyncManager
 from cam_acq.config import NOMINAL_FPS, load_settings, project_root, setup_galaxy_lib_path
 from cam_acq.detection.events import RecordingTrigger
-from gxipy.gxidef import GxFrameStatusList, GxSwitchEntry
+from cam_acq.recording.controller import RecordedSegment, RecordingController
+from cam_acq.recording.grab import run_camera_grab_loop
+from cam_acq.recording.storage import StorageManager
 
 import numpy as np
 
@@ -51,37 +53,57 @@ def _grab_thread(
     *,
     ip: str,
     stats: LiveFeedStats,
+    controller: RecordingController | None,
     stop_at: float,
     resize_w: int,
     resize_h: int,
     debayer_backend: DebayerBackend,
+    errors: list[str],
 ) -> None:
-    """Continuous grab; keep latest resized RGB frame."""
-    cam = None
+    """One camera: Bayer ring (optional) + latest resized RGB for DeepStream."""
+
+    def on_rgb(rgb: np.ndarray) -> None:
+        stats.frames_grabbed += 1
+        stats.set_latest(rgb)
+
     try:
-        cam = open_camera_by_ip(ip)
-        cam.TriggerMode.set(GxSwitchEntry.OFF)
-        cam.stream_on()
-        while time.monotonic() < stop_at:
-            raw = cam.data_stream[0].get_image(timeout=1000)
-            if raw is None:
-                continue
-            stats.frames_grabbed += 1
-            if raw.get_status() != GxFrameStatusList.SUCCESS:
-                stats.incomplete_frames += 1
-                continue
-            rgb = raw_image_to_frame(raw, resize_w, resize_h, backend=debayer_backend)
-            if rgb is not None:
-                stats.set_latest(rgb)
+        run_camera_grab_loop(
+            ip=ip,
+            camera_index=stats.camera_index,
+            stop_at=stop_at,
+            controller=controller,
+            on_rgb_frame=on_rgb,
+            resize_w=resize_w,
+            resize_h=resize_h,
+            debayer_backend=debayer_backend,
+            errors=errors,
+        )
     except Exception as exc:
         stats.open_error = str(exc)
-    finally:
-        if cam is not None:
-            try:
-                cam.stream_off()
-            except Exception:
-                pass
-        close_camera(cam)
+
+
+def _segments_to_report(segments: list[RecordedSegment]) -> list[dict]:
+    return [
+        {
+            "camera_index": s.camera_index,
+            "segment_index": s.segment_index,
+            "video": str(s.video_path),
+            "session": str(s.session_path),
+            "frames": str(s.frames_path),
+            "frame_count": s.frame_count,
+        }
+        for s in segments
+    ]
+
+
+def _flush_ready_segments(
+    controller: RecordingController,
+    time_sync: SessionTimeSync,
+) -> list[RecordedSegment]:
+    """Encode and clear pending trigger when post-buffer elapsed."""
+    if not controller.pending_ready():
+        return []
+    return controller.flush_pending(time_sync=time_sync)
 
 
 def run_live(
@@ -90,8 +112,9 @@ def run_live(
     env_file: Path | None,
     record_path: Path | None,
     output_json: Path | None,
+    event_recording: bool,
 ) -> int:
-    """Grab from configured cameras and run DeepStream YOLO for duration_sec."""
+    """Grab from configured cameras, run YOLO, optionally NVENC on person trigger."""
     settings = load_settings(env_file)
     root = project_root()
     nvinfer = root / "configs" / "nvinfer" / "config_infer_primary_yolo.txt"
@@ -113,6 +136,38 @@ def run_live(
         )
         return 1
 
+    storage: StorageManager | None = None
+    controller: RecordingController | None = None
+    time_sync: SessionTimeSync | None = None
+    recorded_segments: list[RecordedSegment] = []
+
+    if event_recording:
+        storage = StorageManager(
+            settings.storage_path,
+            settings.storage_path_sub,
+            management=settings.storage_management,
+            full_percentage=settings.storage_full_percentage,
+        )
+        controller = RecordingController(
+            storage=storage,
+            camera_indices=settings.camera_indices,
+            buffer_sec=settings.recording_buffer_sec,
+            split_interval_sec=settings.recording_split_interval_sec,
+            pixel_format=settings.pixel_format,
+            codec=settings.encoding_codec,
+            bitrate_bps=int(settings.encoding_bitrate_mbps * 1_000_000),
+            gpu_id=settings.gpu_id,
+        )
+        time_sync = TimeSyncManager().begin_session(
+            settings.cameras,
+            timestamp_reset=settings.timestamp_reset_on_session,
+        )
+
+    trigger = RecordingTrigger(
+        buffer_sec=settings.recording_buffer_sec,
+        confidence_threshold=settings.detection_confidence,
+        camera_indices=settings.camera_indices,
+    )
     stats_list = [LiveFeedStats(camera_index=c.index, ip=c.ip) for c in settings.cameras]
     cam_w = settings.camera_width or 3840
     cam_h = settings.camera_height or 2160
@@ -122,23 +177,24 @@ def run_live(
         camera_w=cam_w,
         camera_h=cam_h,
         confidence_threshold=settings.detection_confidence,
-        trigger=RecordingTrigger(
-            buffer_sec=settings.recording_buffer_sec,
-            confidence_threshold=settings.detection_confidence,
-            camera_indices=settings.camera_indices,
-        ),
+        trigger=trigger,
+        recording=controller,
     )
+
     stop_at = time.monotonic() + duration_sec
+    grab_errors: list[str] = []
     threads = [
         threading.Thread(
             target=_grab_thread,
             kwargs={
                 "ip": st.ip,
                 "stats": st,
+                "controller": controller,
                 "stop_at": stop_at,
                 "resize_w": settings.resize_width,
                 "resize_h": settings.resize_height,
                 "debayer_backend": settings.debayer_backend,
+                "errors": grab_errors,
             },
             daemon=True,
         )
@@ -194,18 +250,31 @@ def run_live(
             if err:
                 print(f"pipeline error: {err}", file=sys.stderr)
                 return 1
+            if controller is not None and time_sync is not None:
+                recorded_segments.extend(_flush_ready_segments(controller, time_sync))
             time.sleep(1.0 / NOMINAL_FPS)
     finally:
         pipeline.stop()
         for t in threads:
             t.join(timeout=5.0)
+        if controller is not None and time_sync is not None:
+            post_deadline = time.monotonic() + settings.recording_buffer_sec + 2.0
+            while time.monotonic() < post_deadline:
+                if not controller.pending_ready():
+                    time.sleep(0.05)
+                    continue
+                recorded_segments.extend(_flush_ready_segments(controller, time_sync))
+                break
+            else:
+                recorded_segments.extend(_flush_ready_segments(controller, time_sync))
 
     elapsed = time.monotonic() - started
-    report = {
+    report: dict = {
         "schema_version": "1.0",
         "status": "PASS",
         "duration_sec": round(elapsed, 3),
         "num_cameras": settings.num_cameras,
+        "event_recording": event_recording,
         "resize": {
             "width": settings.resize_width,
             "height": settings.resize_height,
@@ -229,6 +298,25 @@ def run_live(
         ],
         "started_at": datetime.fromtimestamp(started_wall, tz=timezone.utc).isoformat(),
     }
+    if event_recording and storage is not None and controller is not None:
+        report["recording"] = {
+            "buffer_sec": settings.recording_buffer_sec,
+            "codec": settings.encoding_codec,
+            "storage": {
+                "path": str(storage.location.path),
+                "is_fallback": storage.location.is_fallback,
+                "primary_path": str(settings.storage_path),
+                "primary_reject_reason": storage.primary_reject_reason,
+            },
+            "ring_memory_bytes": controller.memory_report(),
+            "segments": _segments_to_report(recorded_segments),
+        }
+        if not recorded_segments and detection_bridge.trigger_decisions:
+            report["status"] = "FAIL"
+        if grab_errors:
+            report["status"] = "FAIL"
+            report["recording"]["grab_errors"] = grab_errors
+
     min_pushed = int(duration_sec * NOMINAL_FPS * 0.8)
     for cam in report["cameras"]:
         if cam["frames_pushed"] < min_pushed:
@@ -250,7 +338,12 @@ def main() -> int:
         default=None,
         help="overlay MP4 path (default: ./samples/deepstream_yolo_overlay_live_2ch.mp4)",
     )
-    parser.add_argument("--no-record", action="store_true", help="fakesink only, no MP4")
+    parser.add_argument("--no-record", action="store_true", help="fakesink only, no overlay MP4")
+    parser.add_argument(
+        "--no-event-recording",
+        action="store_true",
+        help="disable Phase 4 NVENC recording on person trigger",
+    )
     parser.add_argument("--output", type=Path, default=None, help="JSON report path")
     args = parser.parse_args()
 
@@ -261,6 +354,7 @@ def main() -> int:
         env_file=args.env_file,
         record_path=record,
         output_json=args.output,
+        event_recording=not args.no_event_recording,
     )
 
 

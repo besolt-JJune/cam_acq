@@ -120,6 +120,50 @@ def test_recording_trigger_opens_once():
   assert trig.is_active
 
 
+def test_bridge_recording_hooks():
+  """Probe path: note_detection + schedule_trigger on RecordingController."""
+  from cam_acq.detection.gst_meta import LiveDetectionBridge
+
+  class _FakeRec:
+    def __init__(self) -> None:
+      self.detections: list[DetectionFrameEvent] = []
+      self.triggers: list = []
+
+    def note_detection(self, event: DetectionFrameEvent) -> None:
+      self.detections.append(event)
+
+    def schedule_trigger(self, decision) -> None:
+      self.triggers.append(decision)
+
+  rec = _FakeRec()
+  trig = RecordingTrigger(buffer_sec=10.0, confidence_threshold=0.5, camera_indices=(0,))
+  bridge = LiveDetectionBridge(
+    resize_w=640,
+    resize_h=640,
+    camera_w=3840,
+    camera_h=2160,
+    confidence_threshold=0.5,
+    trigger=trig,
+    recording=rec,
+  )
+  lb = compute_letterbox(3840, 2160, 640, 640)
+  ev = build_detection_event(
+    camera_index=0,
+    frame_id=1,
+    timestamp_us=0,
+    host_recv_us=1_000_000,
+    raw=[RawDetection(0, "person", 0.9, BBox(10, 10, 20, 30))],
+    letterbox=lb,
+    confidence_threshold=0.5,
+  )
+  decision = bridge.trigger.on_detection(ev, host_recv_us=ev.host_recv_us)
+  assert decision is not None
+  rec.note_detection(ev)
+  rec.schedule_trigger(decision)
+  assert len(rec.detections) == 1
+  assert len(rec.triggers) == 1
+
+
 if __name__ == "__main__":
   test_letterbox_4k_to_640()
   test_bbox_roundtrip_center()
@@ -129,4 +173,5 @@ if __name__ == "__main__":
   test_mux_bbox_to_camera()
   test_build_detection_event_from_mux()
   test_recording_trigger_opens_once()
+  test_bridge_recording_hooks()
   print("ok")

@@ -147,14 +147,19 @@ uv pip install dist/pyds-*.whl
 - `samples/deepstream_yolo_overlay_live_2ch.mp4` — person bbox만, 화면 정상(대각선 밀림 없음)
 - `DETECTION_CONFIDENCE` 튜닝
 
-### 6.3 trigger 이벤트 (3.5)
+### 6.3 trigger 이벤트 (3.5) — **추후 (사람 walk-through)**
+
+촬영 환경상 사람이 오가는 테스트가 불가하면 **보류**. 가능해질 때 아래로 검증.
 
 사람 walk-through 시 JSON `detection.trigger_events` 에 `human_detection` 기록.
 
 ```bash
+source venv.sh
 uv run cam-acq-yolo-live --duration 60 --output ./healthcheck/yolo_live_trigger.json
 jq '.detection' ./healthcheck/yolo_live_trigger.json
 ```
+
+Phase 4 자동 녹화 E2E는 §6.7.
 
 ### 6.4 YOLO live soak (안정성)
 
@@ -169,7 +174,7 @@ jq '.detection' ./healthcheck/yolo_live_trigger.json
 카메라 2대 + `STORAGE_PATH` 마운트 후:
 
 ```bash
-export LD_LIBRARY_PATH=$PWD/sdk/Galaxy_camera/c/lib/x86_64:$LD_LIBRARY_PATH
+source venv.sh
 # duration >= trigger_at + 2×RECORDING_BUFFER_SEC (예: buffer 5s, trigger 8s → duration 28)
 uv run cam-acq-record-test --duration 28 --trigger-at 8 --output ./healthcheck/record_test.json
 ```
@@ -184,9 +189,21 @@ GST_ENCODE_TEST=1 uv run python tests/test_recording.py
 
 **참고:** `nvv4l2h264enc`+Bayer 4K 경로는 segfault — `gst_encode.py`는 `nvcudah264enc`/`nvcudah265enc` 사용.
 
-### 6.7 YOLO live + 자동 trigger 녹화 (4.3 E2E)
+### 6.7 Phase 4.3 YOLO live + 자동 trigger 녹화 — **추후 (사람 walk-through)**
 
-`cam-acq-yolo-live`와 `RecordingController` 통합 — **미구현** (수동 trigger는 `cam-acq-record-test`로 검증).
+**코드:** `cam-acq-yolo-live`가 person trigger 시 Bayer ring → NVENC (`--no-event-recording`으로 비활성).
+
+**현장 검증 보류:** 사람이 오가는 walk-through 테스트 불가. 아래는 환경이 되면 수행.
+
+```bash
+source venv.sh
+uv run cam-acq-yolo-live --duration 120 --no-record --output ./healthcheck/yolo_live_record.json
+jq '.recording.segments, .detection.trigger_events' ./healthcheck/yolo_live_record.json
+```
+
+PASS (추후): `detection.trigger_events`에 `human_detection` + `recording.segments[]`에 MP4·메타 경로.
+
+지금 가능한 대체: §6.6 `cam-acq-record-test` (수동 trigger), 단위 테스트 `tests/test_detection.py`.
 
 ---
 
