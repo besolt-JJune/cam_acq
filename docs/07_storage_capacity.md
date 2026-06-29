@@ -12,7 +12,31 @@
 | FPS | 23 |
 | 녹화 | 전 채널 동시, 이벤트 트리거 |
 | 인코딩 | Bayer → GPU debayer → NV12 → **NVENC** |
-| usable 용량 | `disk_total × STORAGE_FULL_PERCENTAGE / 100` (메타 ~5% 차감 권장) |
+| usable 용량 | 활성 경로 디스크 기준: `disk_total × STORAGE_FULL_PERCENTAGE / 100` (메타 ~5% 차감 권장) |
+
+### 1.1 저장 경로 (`STORAGE_PATH` / `STORAGE_PATH_SUB`)
+
+| 변수 | 역할 |
+|------|------|
+| `STORAGE_PATH` | **primary** — 운영 녹화 저장소 (예: SSD mount `/data/recordings`) |
+| `STORAGE_PATH_SUB` | **fallback** — primary를 쓸 수 없을 때 임시 저장 경로 |
+
+**primary 사용 불가 조건 (예):** mount 미완료, 디렉터리 없음, 쓰기 권한 없음, 디스크 full로 reject.
+
+```
+시작 / 녹화 전
+  → STORAGE_PATH 사용 가능? → yes: primary
+                           → no:  STORAGE_PATH_SUB (로그·메타에 active_path 기록)
+```
+
+- Phase 4 `StorageManager`가 활성 경로를 선택하고 FIFO·용량 계산에 반영한다.
+- fallback은 **임시** 용도; primary 복구 후 신규 녹화는 primary로 전환 (기존 fallback 파일은 수동 이관 또는 FIFO 정리).
+- 용량 표(§4)는 **활성 경로가 가리키는 디스크** 기준으로 해석한다.
+
+```bash
+STORAGE_PATH=/data/recordings
+STORAGE_PATH_SUB=./recordings
+```
 
 > **연속 녹화(worst case):** 사람이 항상 검출되어 3채널이 끊김 없이 녹화될 때의 상한.  
 > 실제 운영은 이벤트 빈도에 따라 훨씬 길게 저장된다.

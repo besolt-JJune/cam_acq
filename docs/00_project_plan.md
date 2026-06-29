@@ -51,7 +51,7 @@
 | 카메라 인덱스    | **0-based** (`CAMERA0_IP` = 인덱스 0, IP octet과 무관)        |
 | Pre-buffer | **Full 4K Bayer raw** (RAM ring buffer)                 |
 | Buffer 시간  | `RECORDING_BUFFER_SEC` 단일 (pre/post 공용)                 |
-| 저장 경로      | `STORAGE_PATH` 단일                                       |
+| 저장 경로      | `STORAGE_PATH` (primary) + `STORAGE_PATH_SUB` (fallback) |
 | 녹화 범위      | **전 채널 동시** (3대)                                        |
 | Demosaic   | Pre-buffer는 Bayer 유지, **녹화 encode 직전 GPU debayer 필수**   |
 | 코덱         | **NVENC HW** 사용, H.265 vs H.264는 **Phase 4 프로파일링 후 결정** |
@@ -144,7 +144,7 @@
 | 4.5 | Split recording (`RECORDING_SPLIT_INTERVAL_SEC`) |
 | 4.6 | **코덱 결정: NVENC H.265 vs H.264 프로파일링** (§4.1)     |
 | 4.7 | 메타데이터 (`.json` + `.frames.jsonl`)                |
-| 4.8 | StorageManager (FIFO_DELETE / FIFO_REJECT)       |
+| 4.8 | StorageManager (FIFO, `STORAGE_PATH` / `STORAGE_PATH_SUB` fallback) |
 | 4.9 | RAM/VRAM 실측 (32GB / 16GB)                        |
 
 

@@ -43,6 +43,10 @@
     "segment_start_host_us": 0,
     "segment_end_host_us": 0
   },
+  "storage": {
+    "active_path": "/data/recordings",
+    "is_fallback": false
+  },
   "frames_file": "20250628_143022_cam0_seg00.frames.jsonl"
 }
 ```
@@ -52,6 +56,8 @@
 | `codec` | Phase 4 결정값 (`H264` 또는 `H265`) |
 | `trigger.started_at_host_us` | 녹화 window 시작 (host monotonic, µs) |
 | `time_sync` | 세션 앵커 (`TimestampReset` + `host_t0`). PTP 미사용 |
+| `storage.active_path` | 실제 저장 경로 (`STORAGE_PATH` 또는 fallback `STORAGE_PATH_SUB`) |
+| `storage.is_fallback` | `true`이면 `STORAGE_PATH_SUB` 사용 중 |
 | `frames_file` | companion jsonl 경로 |
 
 ## 2. 프레임 메타 (`*.frames.jsonl`)

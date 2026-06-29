@@ -45,8 +45,8 @@ flowchart TB
         YOLO -->|trigger| RC
         DEBAYER --> RC
         RC --> ENC --> META
-        META --> STOR[(STORAGE_PATH)]
-        SM[StorageManager\nFIFO]
+        META --> STOR[(STORAGE_PATH\nor STORAGE_PATH_SUB)]
+        SM[StorageManager\nFIFO + path fallback]
         STOR --> SM
     end
 
@@ -88,7 +88,7 @@ Camera (Bayer 4K)
 RAM Ring Buffer (Bayer 4K, pre+event+post)
   → GPU debayer (nvvideoconvert) → NV12 4K
   → NVENC (H.265 or H.264, HW)
-  → .mp4 + .json + .frames.jsonl → STORAGE_PATH
+  → .mp4 + .json + .frames.jsonl → STORAGE_PATH (불가 시 STORAGE_PATH_SUB)
 ```
 
 **Bayer를 NVENC에 직접 넣지 않는다.**

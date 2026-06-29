@@ -12,7 +12,7 @@
 | 프레임 드랍 / incomplete | healthcheck 동일 기준 | 채널 상태 배지 |
 | Detection (person 수, bbox) | YOLO nvinfer meta | 썸네일 overlay |
 | 녹화 상태 | RecordingController | REC / idle |
-| Storage 사용률 | StorageManager | 게이지 + `STORAGE_PATH` 여유 GB |
+| Storage 사용률 | StorageManager | 게이지 + 활성 경로(`STORAGE_PATH` 또는 fallback) 여유 GB |
 | 카메라 연결 | CameraManager | online / offline |
 
 ### 1.2 호스트 리소스 (추가)
@@ -73,7 +73,7 @@ Pre-buffer RAM·3ch NVENC 부하 확인용. Phase 4~5 soak 시 **CPU/RAM/GPU/온
 │  VRAM     [===]  │  [det bbox]  [det bbox]  —              │
 │  GPU 62°C        │                                          │
 ├──────────────────┴──────────────────────────────────────────┤
-│  Storage: 42% (180GB free)   Recording: idle   Det: 0.5s   │
+│  Storage: 42% (180GB free) @ /data/recordings   Recording: idle   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
