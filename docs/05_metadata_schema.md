@@ -3,10 +3,13 @@
 녹화 파일과 **동일 basename**, 확장자만 다르게 저장한다.
 
 ```
-20250628_143022_cam0_seg00.mp4
-20250628_143022_cam0_seg00.json           # session / segment 메타
-20250628_143022_cam0_seg00.frames.jsonl   # 프레임별 (1 line = 1 frame)
+20250628_143022_cam0_seg00.mp4              # event (auto)
+20250628_143022_cam0_seg00_manual.mp4       # manual
+20250628_143022_cam0_seg00.json             # session / segment 메타
+20250628_143022_cam0_seg00.frames.jsonl     # 프레임별 (1 line = 1 frame)
 ```
+
+수동 녹화(`trigger.manual=true`)는 basename 끝에 `_manual` 접미사.
 
 ## 1. Session 메타 (`*.json`)
 
@@ -55,6 +58,9 @@
 |------|------|
 | `codec` | Phase 4 결정값 (`H264` 또는 `H265`) |
 | `trigger.started_at_host_us` | 녹화 window 시작 (host monotonic, µs) |
+| `trigger.ended_at_host_us` | 종료 시각 — event: 마지막 person + 침묵 `RECORDING_BUFFER_SEC`; manual: stop 시각 |
+| `buffer.pre_sec` | ring pre / encode window 선행 구간 (`RECORDING_BUFFER_SEC`) |
+| `buffer.post_sec` | 스키마 호환 필드; event 침묵 tail은 `ended_at`에 포함 (별도 가산 없음) |
 | `time_sync` | 세션 앵커 (`TimestampReset` + `host_t0`). PTP 미사용 |
 | `storage.active_path` | 실제 저장 경로 (`STORAGE_PATH` 또는 fallback `STORAGE_PATH_SUB`) |
 | `storage.is_fallback` | `true`이면 `STORAGE_PATH_SUB` 사용 중 |

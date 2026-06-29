@@ -7,6 +7,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import psutil
@@ -22,6 +23,7 @@ class CpuMetrics:
 
     percent: float | None
     count: int | None
+    temperature_c: float | None = None
 
 
 @dataclass(frozen=True)
@@ -114,12 +116,54 @@ def _iso_now() -> str:
 
 
 def _sample_cpu() -> CpuMetrics:
-    """Read CPU percent and logical core count."""
+    """Read CPU percent, core count, and best-effort package temperature."""
     try:
-        return CpuMetrics(percent=psutil.cpu_percent(interval=None), count=psutil.cpu_count())
+        return CpuMetrics(
+            percent=psutil.cpu_percent(interval=None),
+            count=psutil.cpu_count(),
+            temperature_c=_sample_cpu_temperature(),
+        )
     except Exception as exc:
         logger.warning("cpu sample failed: %s", exc)
-        return CpuMetrics(percent=None, count=None)
+        return CpuMetrics(percent=None, count=None, temperature_c=None)
+
+
+def _sample_cpu_temperature() -> float | None:
+    """CPU package temp via psutil sensors, else Linux thermal sysfs."""
+    try:
+        temps = psutil.sensors_temperatures()
+    except Exception:
+        temps = {}
+    preferred = ("coretemp", "k10temp", "zenpower", "cpu_thermal", "acpitz")
+    for name in preferred:
+        if name in temps:
+            vals = [e.current for e in temps[name] if e.current is not None]
+            if vals:
+                return float(max(vals))
+    for entries in temps.values():
+        vals = [e.current for e in entries if e.current is not None]
+        if vals:
+            return float(max(vals))
+    # ponytail: sysfs scan when lm-sensors/psutil has no labels (headless)
+    try:
+        best: float | None = None
+        for zone in Path("/sys/class/thermal").glob("thermal_zone*"):
+            temp_file = zone / "temp"
+            if not temp_file.is_file():
+                continue
+            label = ""
+            type_file = zone / "type"
+            if type_file.is_file():
+                label = type_file.read_text(encoding="ascii", errors="replace").strip().lower()
+            t = int(temp_file.read_text(encoding="ascii").strip()) / 1000.0
+            if any(k in label for k in ("cpu", "core", "package", "x86")):
+                return t
+            if best is None or t > best:
+                best = t
+        return best
+    except Exception as exc:
+        logger.debug("cpu temperature sysfs failed: %s", exc)
+        return None
 
 
 def _sample_memory() -> MemoryMetrics:

@@ -12,21 +12,24 @@
 |------|------|----------|-----|
 | 수신 FPS (1s rolling) | `GrabStats` → `PipelineHooks` | `cameras[].fps_live` | 카메라 카드 |
 | 프레임 드랍 / incomplete | `GrabStats` | `frame_drops`, `incomplete_frames` | 카드 하단 |
-| Detection (person 수) | `DetectionFrameEvent` → hooks | `cameras[].person_count` | 카드 (bbox overlay는 추후) |
-| 녹화 상태 | `RecordingController.status_snapshot()` | `recording.state` | footer |
+| Detection (person 수) | `DetectionFrameEvent` → hooks | `cameras[].person_count`, `detections[]` | 카드 + bbox canvas |
+| 녹화 상태 | `RecordingController` + `RecordingTrigger` | `recording.state`, `manual_active`, `manual_elapsed_sec` | footer |
 | Storage (`STORAGE_PATH`) | `disk_usage_at` + `StorageManager` | `system.storage` | 시스템 패널 게이지 |
 | 활성 녹화 경로 | `StorageManager.location` | `system.storage.active_path` | 시스템 패널 |
 | 카메라 연결 | `GrabStats.open_error` / frames | `cameras[].connection` | online/offline/unknown |
 | Pre-buffer RAM | `RecordingController.memory_report()` 또는 추정 | `prebuffer.bytes_total` | 시스템 패널 |
 | TimeSync drift | `SessionTimeSync` + live tick spread | `timesync.live_max_skew_us` | NIC 패널 |
 
-녹화 상태 값: `idle` | `armed` | `post_buffer` | `ready_to_flush` | `encoding`
+녹화 상태 값: `idle` | `recording` | `post_buffer` | `ready_to_flush` | `encoding`
+
+- **수동 녹화 중:** `recording (manual) · M:SS` (footer, `manual_elapsed_sec` from WebSocket)
+- **Event 침묵 tail:** `post_buffer` (person 무검출 후 `RECORDING_BUFFER_SEC` 대기)
 
 ### 1.2 호스트 리소스
 
 | 항목 | 수집 | API 필드 |
 |------|------|----------|
-| CPU | `psutil` | `system.cpu` |
+| CPU | `psutil` + thermal sysfs | `system.cpu` (`temperature_c`) |
 | RAM | `psutil` | `system.memory` |
 | GPU SM | NVML | `system.gpu.utilization_percent` |
 | NVENC / NVDEC | NVML encoder/decoder util | `system.gpu.encoder_percent`, `decoder_percent` |
@@ -41,7 +44,7 @@
 |--------|------|------|
 | 호스트 메트릭 | `SYSTEM_METRICS_POLL_SEC` (기본 2s) | `HostMetricsSampler` daemon |
 | 카메라 FPS | 1s rolling (`GrabStats._fps_window`) | grab 루프가 hooks 갱신 시 |
-| UI | WebSocket push | 썸네일 스트림은 `UI_MAX_DISPLAY_FPS` (추후) |
+| UI | WebSocket push + MJPEG | YOLO input resize RGB (`gst_thumb` probe / `push_batch`) |
 
 ## 2. Data Collector
 
@@ -85,56 +88,18 @@ hooks.set_detection(detection_frame_event)
 
 | 영역 | 내용 |
 |------|------|
-| 시스템 패널 | CPU·RAM·GPU·NVENC·NVDEC·VRAM·온도·RSS·disk I/O·**storage**·pre-buffer |
-| 카메라 그리드 | 채널별 FPS·person·drop (썸네일/bbox overlay 추후) |
+| 시스템 패널 | CPU·RAM·GPU·NVENC·NVDEC·VRAM·**CPU/GPU 온도(한 행)**·RSS·disk I/O·**storage**·pre-buffer |
+| 카메라 그리드 | 채널별 FPS·person·drop·MJPEG 썸네일·bbox overlay |
 | NIC / TimeSync | `CAMERA*_INTERFACE` 트래픽·에러, live skew |
 
-**미구현 (Phase 5 잔여):** 수동 녹화 버튼 (`POST /api/recording/trigger`), MJPEG/WebSocket 썸네일, **카메라 파라미터 설정 UI** (§3.1)
+**구현 완료.** 파이프라인 연동은 `cam-acq-yolo-live --with-monitoring` 또는 `cam-acq-record-test --with-monitoring`.
 
-### 3.1 카메라 파라미터 설정 UI (Phase 5 — **미구현**, API만 준비)
+Dashboard 헤더 **● REC** / **■ STOP** → `POST /api/recording/trigger` (start) · `POST /api/recording/stop` (end).  
+수동 녹화 중 footer에 `recording (manual) · M:SS` 표시 (`manual_elapsed_sec`).
 
-Dashboard 메인 화면과 **분리된 설정 창**(모달 또는 별도 패널). Phase 5에서 구현 예정.
+### 3.1 카메라 파라미터 설정 UI (Phase 5)
 
-**진입**
-
-- Dashboard 헤더/툴바에 `Camera Settings` (또는 동등) 버튼 → 설정 창 오픈
-
-**설정 창 구성**
-
-| 영역 | 동작 |
-|------|------|
-| 카메라 선택 | `connection=online` 인 채널만 선택 가능; 오프라인은 비활성 + 사유 표시 |
-| 현재값 표시 | 선택 시 `GET /api/cameras/{id}/params` 로 폼 초기화 |
-| 편집 필드 | ExposureTime (µs), ExposureAuto, AcquisitionFrameRate, Gain, GainAuto, GammaMode, Gamma |
-| 적용 | 사용자가 **Apply** 클릭 시에만 `PATCH /api/cameras/{id}/params` 호출 (자동/주기 적용 없음) |
-| 피드백 | `apply_pending` / `last_apply_error` 표시; 성공 시 GET으로 재동기화 |
-
-**UX 원칙**
-
-- 파라미터는 **사용자 명시 요청(PATCH) 시에만** grab 스레드가 GenICam에 반영한다. 프레임마다 재적용하지 않는다 (취득 중 이미지 깨짐 방지).
-- 카메라 전환 시 미저장 편집은 확인 다이얼로그(선택).
-- enum 필드(ExposureAuto, GainAuto, GammaMode)는 기기 symbolic 목록을 API 응답 또는 고정 매핑으로 드롭다운.
-
-- **백엔드 전제**
-
-- grab 루프와 monitoring API가 **동일 프로세스** (`cam-acq-yolo-live --with-monitoring` 등). 단독 `cam-acq-monitoring`만으로는 PATCH 불가 (`503`).
-
-**별도 프로세스 검증 (Dashboard 전 테스트)**
-
-Galaxy SDK는 동일 카메라를 **두 프로세스가 동시에 open 할 수 없다**. grab가 `cam` 핸들을 잡는 동안 별도 gxipy 스크립트로 `set()` 하는 방식은 불가.
-
-대신 grab 프로세스의 REST API를 **다른 터미널/프로세스**에서 호출한다 (Dashboard와 동일 경로):
-
-```bash
-# 터미널 1 — grab + monitoring API
-cam-acq-yolo-live --with-monitoring --duration 3600
-
-# 터미널 2 — parameter client (HTTP only, 카메라 직접 open 안 함)
-cam-acq-params get --camera 0
-cam-acq-params patch --camera 0 --gain 8.0 --exposure-auto Off --wait
-```
-
-`cam-acq-params` = `GET/PATCH /api/cameras/{id}/params` 래퍼. `--wait`는 grab 스레드 반영·`last_apply_error` 확인용.
+Dashboard 헤더 **Camera Settings** → 모달에서 online 채널만 선택, **Apply** → `PATCH /api/cameras/{id}/params`.
 
 ### 경고 임계치 (`.env`)
 
@@ -161,37 +126,14 @@ GET  /api/system/metrics
 GET  /api/cameras/{camera_index}/stats
 GET  /api/cameras/{camera_index}/params
 PATCH /api/cameras/{camera_index}/params
+POST /api/recording/trigger        # manual start
+POST /api/recording/stop           # manual stop
+GET  /api/stream/{camera_index}       # MJPEG multipart live
+GET  /api/snapshot/{camera_index}     # single JPEG (curl -o cam0.jpg)
 WS   /api/ws/dashboard
 ```
 
-`GET/PATCH .../params` — grab 루프와 동일 프로세스 + `RuntimeParamStore` 연결 시 (`cam-acq-yolo-live --with-monitoring` 등).
-
-- **GET** — 마지막으로 카메라에 반영된 값 (`apply_pending`, `last_apply_error` 포함).
-- **PATCH** — 사용자 요청 시에만 큐잉; grab 스레드가 **다음 루프에서 신호를 받았을 때 한 번** GenICam에 반영 (프레임마다 적용하지 않음). UI는 Apply 버튼 → PATCH.
-
-`GET /api/cameras/{id}/params` 응답 예:
-
-```json
-{
-  "camera_index": 0,
-  "exposure_time_us": 10000.0,
-  "exposure_auto": "Off",
-  "acquisition_frame_rate": 23.0,
-  "gain": 10.0,
-  "gain_auto": "Off",
-  "gamma_mode": "User",
-  "gamma": 1.0,
-  "apply_pending": false,
-  "last_apply_error": null
-}
-```
-
-### 추후
-
-```
-GET  /api/stream/{camera_index}
-POST /api/recording/trigger
-```
+`--with-monitoring` 시 pre-buffer·수동 REC·스트림·params 사용 가능. 단독 `cam-acq-monitoring`은 호스트 메트릭만 (REC/스트림 `503`).
 
 ### `GET /api/health` 최상위 블록
 
@@ -203,7 +145,7 @@ POST /api/recording/trigger
 {
   "schema_version": "1.0",
   "collected_at": "2026-06-29T12:00:00+09:00",
-  "cpu": { "percent": 34.2, "count": 16 },
+  "cpu": { "percent": 34.2, "count": 16, "temperature_c": 58.0 },
   "memory": { "percent": 61.5, "used_bytes": 20615843020, "total_bytes": 33554432000 },
   "gpu": {
     "utilization_percent": 72,
@@ -246,6 +188,10 @@ curl -s localhost:8080/api/health | jq
 curl -s localhost:8080/api/system/metrics | jq '.cpu,.memory,.gpu,.disk_io'
 curl -s localhost:8080/api/health | jq '.system.storage,.recording,.timesync'
 curl -s localhost:8080/api/cameras/0/stats | jq
+curl -s -X POST localhost:8080/api/recording/trigger | jq
+curl -s -X POST localhost:8080/api/recording/stop | jq
+curl -s localhost:8080/api/snapshot/0 -o /tmp/cam0.jpg && file /tmp/cam0.jpg
+# MJPEG는 multipart — 브라우저/img 태그용. 단일 파일은 snapshot 사용.
 ```
 
 원격 브라우저: SSH `-L 8080:localhost:8080` 또는 Cursor Ports (`08_ssh_healthcheck_guide.md`).

@@ -78,15 +78,19 @@ RESIZE_WIDTH=960
 RESIZE_HEIGHT=540
 ```
 
-## 7. Phase 5 API (예정)
+## 7. Phase 5 API (구현)
 
 ```
 GET  /api/health
-GET  /api/system/metrics          # CPU, RAM, GPU util, VRAM, temperature
+GET  /api/system/metrics          # CPU (+ temperature_c), RAM, GPU util, VRAM, temperature
 GET  /api/cameras/{camera_index}/stats
-GET  /api/stream/{camera_index}   # MJPEG or WebSocket
+GET  /api/cameras/{camera_index}/params
+PATCH /api/cameras/{camera_index}/params
+GET  /api/stream/{camera_index}   # MJPEG multipart
+GET  /api/snapshot/{camera_index} # single JPEG
 WS   /api/ws/dashboard            # 메트릭·상태 push
-POST /api/recording/trigger       # 수동 녹화
+POST /api/recording/trigger       # 수동 녹화 시작
+POST /api/recording/stop          # 수동 녹화 종료
 ```
 
 SSH만 가능한 경우:

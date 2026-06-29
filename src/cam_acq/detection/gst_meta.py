@@ -11,6 +11,7 @@ from cam_acq.detection.bbox import BBox, RawDetection
 from cam_acq.detection.events import (
     DetectionFrameEvent,
     RecordingTrigger,
+    TriggerAction,
     TriggerDecision,
     build_detection_event_from_mux,
 )
@@ -33,6 +34,7 @@ class LiveDetectionBridge:
     confidence_threshold: float
     trigger: RecordingTrigger
     recording: RecordingController | None = None
+    on_detection: Callable[[DetectionFrameEvent], None] | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     frames_with_meta: int = 0
     person_frame_hits: int = 0
@@ -122,13 +124,16 @@ def make_nvinfer_src_probe(bridge: LiveDetectionBridge) -> Callable[..., Any]:
                     bridge.person_frame_hits += 1
                 if bridge.recording is not None:
                     bridge.recording.note_detection(event)
-                decision: TriggerDecision | None = bridge.trigger.on_detection(
+                action: TriggerAction | None = bridge.trigger.on_frame(
                     event, host_recv_us=host_us
                 )
-                if decision is not None:
-                    bridge.trigger_decisions.append(decision.as_dict())
+                if action is not None:
+                    if action.kind == "schedule" and action.decision is not None:
+                        bridge.trigger_decisions.append(action.decision.as_dict())
                     if bridge.recording is not None:
-                        bridge.recording.schedule_trigger(decision)
+                        bridge.recording.apply_trigger_action(action)
+            if bridge.on_detection is not None:
+                bridge.on_detection(event)
             try:
                 l_frame = l_frame.next
             except StopIteration:

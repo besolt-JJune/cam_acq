@@ -8,12 +8,13 @@ import logging
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
 from cam_acq.camera.params import patch_to_param_dict
 from cam_acq.config import Settings
 from cam_acq.monitoring.collector import DashboardCollector
+from cam_acq.monitoring.thumbnails import placeholder_jpeg
 
 logger = logging.getLogger(__name__)
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -103,6 +104,54 @@ def create_app(settings: Settings, collector: DashboardCollector | None = None) 
             raise HTTPException(status_code=404, detail="camera_index not configured") from None
         body = store.snapshot(camera_index)
         return JSONResponse(body or {"camera_index": camera_index})
+
+    @app.post("/api/recording/trigger")
+    async def recording_trigger() -> JSONResponse:
+        """Start manual all-channel recording (until POST /api/recording/stop)."""
+        try:
+            decision = col.manual_recording_start()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return JSONResponse({"ok": True, "trigger": decision})
+
+    @app.post("/api/recording/stop")
+    async def recording_stop() -> JSONResponse:
+        """End manual recording session."""
+        try:
+            body = col.manual_recording_stop()
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        return JSONResponse(body)
+
+    @app.get("/api/snapshot/{camera_index}")
+    async def camera_snapshot(camera_index: int) -> Response:
+        """Single JPEG frame (RESIZE_WIDTH×HEIGHT). Use this for curl/file save."""
+        if col.camera_stats(camera_index) is None:
+            raise HTTPException(status_code=404, detail="camera_index not configured")
+        jpeg = col.hooks.thumbnails.get_jpeg(camera_index)
+        if not jpeg:
+            raise HTTPException(status_code=503, detail="no frame yet")
+        return Response(content=jpeg, media_type="image/jpeg")
+
+    @app.get("/api/stream/{camera_index}")
+    async def camera_stream(camera_index: int) -> StreamingResponse:
+        """MJPEG live stream (multipart; not a single JPEG file — use /api/snapshot for curl)."""
+        if col.camera_stats(camera_index) is None:
+            raise HTTPException(status_code=404, detail="camera_index not configured")
+
+        boundary = b"--frame"
+        interval = max(1.0 / max(1, settings.ui_max_display_fps), 0.05)
+
+        async def _frames():
+            while True:
+                jpeg = col.hooks.thumbnails.get_jpeg(camera_index) or placeholder_jpeg()
+                yield boundary + b"\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+                await asyncio.sleep(interval)
+
+        return StreamingResponse(
+            _frames(),
+            media_type="multipart/x-mixed-replace; boundary=frame",
+        )
 
     @app.websocket("/api/ws/dashboard")
     async def ws_dashboard(websocket: WebSocket) -> None:

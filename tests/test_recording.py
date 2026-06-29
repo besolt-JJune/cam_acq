@@ -48,6 +48,8 @@ def test_basename_same_timestamp_across_cameras():
         assert b0.partition("_cam")[0] == b1.partition("_cam")[0]
         assert b0.endswith("_cam0_seg00")
         assert b1.endswith("_cam1_seg00")
+        manual = sm.make_basename(camera_index=0, segment_index=0, when=when, manual=True)
+        assert manual.endswith("_cam0_seg00_manual")
 
 
 def test_storage_fifo_cleanup_api():

@@ -16,6 +16,7 @@ from cam_acq.camera.params import (
     apply_camera_params,
     patch_to_param_dict,
     read_camera_params,
+    read_enum_options,
 )
 
 
@@ -115,10 +116,20 @@ def test_apply_and_read_roundtrip():
     assert snap[FIELD_GAIN] == 12.0
 
 
+def test_read_enum_options():
+    cam = _fake_cam()
+    opts = read_enum_options(cam)
+    assert opts[FIELD_EXPOSURE_AUTO] == ["Off", "Continuous", "Once"]
+    assert opts[FIELD_GAMMA_MODE] == ["sRGB", "User"]
+
+
 def test_runtime_store_apply_only_on_request():
     store = RuntimeParamStore((0,))
     cam = _fake_cam()
     store.on_camera_open(cam, 0)
+    snap = store.snapshot(0)
+    assert snap is not None
+    assert snap["options"][FIELD_EXPOSURE_AUTO] == ["Off", "Continuous", "Once"]
     assert store.apply_if_requested(cam, 0) is False
     store.queue_update(0, {FIELD_GAIN: 7.5})
     assert store.apply_if_requested(cam, 0) is True
@@ -133,5 +144,6 @@ def test_runtime_store_apply_only_on_request():
 if __name__ == "__main__":
     test_patch_to_param_dict_ignores_none()
     test_apply_and_read_roundtrip()
+    test_read_enum_options()
     test_runtime_store_apply_only_on_request()
     print("ok")

@@ -40,6 +40,24 @@ def _float_value(feature: Any) -> float | None:
     return float(feature.get())
 
 
+def read_enum_options(cam: Any) -> dict[str, list[str]]:
+    """Symbolic labels allowed for enum GenICam features (for dashboard selects)."""
+    out: dict[str, list[str]] = {}
+    for field, attr in (
+        (FIELD_EXPOSURE_AUTO, "ExposureAuto"),
+        (FIELD_GAIN_AUTO, "GainAuto"),
+        (FIELD_GAMMA_MODE, "GammaMode"),
+    ):
+        feature = getattr(cam, attr, None)
+        if feature is None or not feature.is_readable():
+            continue
+        try:
+            out[field] = [str(name) for name in feature.get_range().keys()]
+        except Exception:
+            continue
+    return out
+
+
 def read_camera_params(cam: Any) -> dict[str, float | str | None]:
     """Snapshot current GenICam values for API responses."""
     return {

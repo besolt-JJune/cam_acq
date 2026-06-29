@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, Any
 
 from cam_acq.camera.grab import GrabStats
@@ -34,6 +35,8 @@ def _connection_state(stats: GrabStats | None) -> str:
         return "offline"
     if stats.frames_received > 0:
         return "online"
+    if _fps_live(stats) is not None and _fps_live(stats) > 0:
+        return "online"
     return "unknown"
 
 
@@ -48,6 +51,9 @@ def camera_payload(
         gs = grab_by_index.get(ep.index)
         det = detection_by_index.get(ep.index)
         person_count = len(det.detections) if det else 0
+        detections = (
+            [d.as_frame_dict() for d in det.detections] if det else []
+        )
         out.append(
             {
                 "camera_index": ep.index,
@@ -63,6 +69,7 @@ def camera_payload(
                 "timestamp_regressions": gs.timestamp_regressions if gs else 0,
                 "recovery_events": gs.recovery.offline_events if gs else 0,
                 "person_count": person_count,
+                "detections": detections,
                 "last_frame_id": gs.last_frame_id if gs else None,
                 "width": gs.width if gs else settings.camera_width,
                 "height": gs.height if gs else settings.camera_height,
@@ -84,9 +91,17 @@ def recording_payload(
             "pending": None,
             "segments_written": 0,
         }
-    snap = controller.status_snapshot()
-    if trigger is not None and trigger.is_active and snap["state"] == "idle":
-        snap = {**snap, "state": "armed", "trigger_active": True}
+    snap = controller.status_snapshot(manual_active=trigger is not None and trigger.manual_active)
+    if trigger is not None and trigger.event_session_open and snap["state"] == "idle":
+        snap = {**snap, "state": "recording", "trigger_active": True}
+    elif trigger is not None and trigger.manual_active:
+        snap = {**snap, "manual_active": True}
+    pending = snap.get("pending")
+    if pending and pending.get("manual") and snap.get("manual_active"):
+        started = pending.get("started_at_host_us")
+        if started is not None:
+            now_us = int(time.monotonic() * 1_000_000)
+            snap["manual_elapsed_sec"] = round(max(0.0, (now_us - started) / 1_000_000), 1)
     return snap
 
 

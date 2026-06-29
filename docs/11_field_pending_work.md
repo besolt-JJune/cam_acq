@@ -202,9 +202,11 @@ uv run cam-acq-bayer-pattern-check --camera-index 0 --output-dir ./healthcheck/b
 
 ```bash
 source venv.sh
-# duration >= trigger_at + 2×RECORDING_BUFFER_SEC (예: buffer 5s, trigger 8s → duration 28)
+# manual: trigger-at 에 start, 이후 buffer_sec 이상 녹화 후 자동 stop (record_test 내장)
 uv run cam-acq-record-test --duration 28 --trigger-at 8 --output ./healthcheck/record_test.json
 ```
+
+출력 파일: `*_manual.mp4` (basename `_manual` 접미사).
 
 PASS 조건: JSON `status`=`PASS`, `segments[]`에 cam0/cam1 MP4·`.json`·`.frames.jsonl` 경로, `ring_memory_bytes` 기록.
 

@@ -39,8 +39,12 @@ class LiveFeedStats:
     frames_pushed: int = 0
     incomplete_frames: int = 0
     open_error: str | None = None
+    _fps_window: list[float] = field(default_factory=list, repr=False)
+    _fps_window_start: float = 0.0
+    _fps_window_frames: int = 0
     _latest_rgb: np.ndarray | None = field(default=None, repr=False)
     _latest_bayer: BayerFrame | None = field(default=None, repr=False)
+    _yolo_rgb: np.ndarray | None = field(default=None, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def set_latest_rgb(self, frame: np.ndarray) -> None:
@@ -51,6 +55,11 @@ class LiveFeedStats:
         with self._lock:
             return self._latest_rgb
 
+    def peek_latest_rgb(self) -> np.ndarray | None:
+        """Non-consuming read of latest RGB (for monitoring thumbnails)."""
+        with self._lock:
+            return self._latest_rgb
+
     def set_latest_bayer(self, frame: BayerFrame) -> None:
         with self._lock:
             self._latest_bayer = frame
@@ -58,6 +67,42 @@ class LiveFeedStats:
     def take_latest_bayer(self) -> BayerFrame | None:
         with self._lock:
             return self._latest_bayer
+
+    def set_yolo_rgb(self, frame: np.ndarray) -> None:
+        """Latest resize RGB at YOLO input (from probe or push_batch)."""
+        with self._lock:
+            self._yolo_rgb = frame
+
+    def peek_yolo_rgb(self) -> np.ndarray | None:
+        with self._lock:
+            return self._yolo_rgb
+
+    def record_grab_frame(self) -> None:
+        """Increment grab count and append 1s rolling FPS windows (grab thread)."""
+        with self._lock:
+            self.frames_grabbed += 1
+            now = time.monotonic()
+            if self._fps_window_start <= 0:
+                self._fps_window_start = now
+            self._fps_window_frames += 1
+            if now - self._fps_window_start >= 1.0:
+                elapsed = now - self._fps_window_start
+                if elapsed > 0:
+                    self._fps_window.append(self._fps_window_frames / elapsed)
+                    if len(self._fps_window) > 10:
+                        self._fps_window.pop(0)
+                self._fps_window_start = now
+                self._fps_window_frames = 0
+
+    def monitoring_snapshot(self) -> tuple[int, int, str | None, list[float]]:
+        """Thread-safe counters for dashboard sync."""
+        with self._lock:
+            return (
+                self.frames_grabbed,
+                self.incomplete_frames,
+                self.open_error,
+                list(self._fps_window),
+            )
 
 
 def _grab_thread(
@@ -77,11 +122,11 @@ def _grab_thread(
     use_gpu_debayer = debayer_backend == DebayerBackend.GPU_PHASE3
 
     def on_rgb(rgb: np.ndarray) -> None:
-        stats.frames_grabbed += 1
+        stats.record_grab_frame()
         stats.set_latest_rgb(rgb)
 
     def on_bayer(bayer: BayerFrame) -> None:
-        stats.frames_grabbed += 1
+        stats.record_grab_frame()
         stats.set_latest_bayer(bayer)
 
     try:
@@ -120,11 +165,15 @@ def _segments_to_report(segments: list[RecordedSegment]) -> list[dict]:
 def _flush_ready_segments(
     controller: RecordingController,
     time_sync: SessionTimeSync,
+    trigger: RecordingTrigger | None = None,
 ) -> list[RecordedSegment]:
-    """Encode and clear pending trigger when post-buffer elapsed."""
+    """Encode and clear pending trigger when session end time elapsed."""
     if not controller.pending_ready():
         return []
-    return controller.flush_pending(time_sync=time_sync)
+    segments = controller.flush_pending(time_sync=time_sync)
+    if trigger is not None:
+        trigger.clear_session()
+    return segments
 
 
 def run_live(
@@ -161,13 +210,14 @@ def run_live(
         return 1
 
     use_gpu_debayer = settings.debayer_backend == DebayerBackend.GPU_PHASE3
+    need_recording = event_recording or with_monitoring
 
     storage: StorageManager | None = None
     controller: RecordingController | None = None
     time_sync: SessionTimeSync | None = None
     recorded_segments: list[RecordedSegment] = []
 
-    if event_recording:
+    if need_recording:
         storage = StorageManager(
             settings.storage_path,
             settings.storage_path_sub,
@@ -198,17 +248,19 @@ def run_live(
     stats_list = [LiveFeedStats(camera_index=c.index, ip=c.ip) for c in settings.cameras]
     cam_w = settings.camera_width or 3840
     cam_h = settings.camera_height or 2160
-    detection_bridge = LiveDetectionBridge(
-        resize_w=settings.resize_width,
-        resize_h=settings.resize_height,
-        camera_w=cam_w,
-        camera_h=cam_h,
-        confidence_threshold=settings.detection_confidence,
-        trigger=trigger,
-        recording=controller,
-    )
+
+    thumb_interval = max(0.2, 1.0 / max(1, settings.ui_max_display_fps))
+    thumb_last: dict[int, float] = {}
+    stats_by_idx = {st.camera_index: st for st in stats_list}
+
+    def on_yolo_input_frame(camera_index: int, rgb: np.ndarray) -> None:
+        """Queue YOLO resize RGB; JPEG encode runs on main loop (sync_yolo_thumbnails)."""
+        st = stats_by_idx.get(camera_index)
+        if st is not None:
+            st.set_yolo_rgb(rgb)
 
     param_store: RuntimeParamStore | None = None
+    hooks = None
     if with_monitoring:
         from cam_acq.monitoring import DashboardCollector, PipelineHooks, start_monitoring_server
 
@@ -218,8 +270,23 @@ def run_live(
             hooks.bind_recording(controller, trigger=trigger)
         if time_sync is not None:
             hooks.bind_time_sync(time_sync)
-        collector = DashboardCollector(settings, hooks=hooks)
+        collector = DashboardCollector(
+            settings,
+            hooks=hooks,
+            storage_manager=storage,
+        )
         start_monitoring_server(settings, collector)
+
+    detection_bridge = LiveDetectionBridge(
+        resize_w=settings.resize_width,
+        resize_h=settings.resize_height,
+        camera_w=cam_w,
+        camera_h=cam_h,
+        confidence_threshold=settings.detection_confidence,
+        trigger=trigger,
+        recording=controller if event_recording else None,
+        on_detection=hooks.set_detection if hooks is not None else None,
+    )
 
     stop_at = time.monotonic() + duration_sec
     grab_errors: list[str] = []
@@ -263,13 +330,21 @@ def run_live(
         bayer_width=cam_w,
         bayer_height=cam_h,
         bayer_gst_format=gst_format_from_bayer_format(settings.bayer_format),
+        on_yolo_input_frame=on_yolo_input_frame if with_monitoring else None,
     )
     pipeline.start()
     started_wall = time.time()
     started = time.monotonic()
     push_errors = 0
+    last_hook_sync = 0.0
     try:
         while time.monotonic() < stop_at:
+            now = time.monotonic()
+            if hooks is not None and now - last_hook_sync >= 1.0:
+                from cam_acq.monitoring.live_sync import sync_live_feed_to_hooks
+
+                sync_live_feed_to_hooks(hooks=hooks, stats_list=stats_list)
+                last_hook_sync = now
             if use_gpu_debayer:
                 bayer_batch: list[BayerFrame] = []
                 for st in stats_list:
@@ -321,7 +396,16 @@ def run_live(
                 print(f"pipeline error: {err}", file=sys.stderr)
                 return 1
             if controller is not None and time_sync is not None:
-                recorded_segments.extend(_flush_ready_segments(controller, time_sync))
+                recorded_segments.extend(_flush_ready_segments(controller, time_sync, trigger))
+            if with_monitoring:
+                from cam_acq.monitoring.yolo_thumb import sync_yolo_thumbnails
+
+                sync_yolo_thumbnails(
+                    hooks=hooks,
+                    stats_list=stats_list,
+                    thumb_last=thumb_last,
+                    interval_sec=thumb_interval,
+                )
             time.sleep(1.0 / NOMINAL_FPS)
     finally:
         pipeline.stop()
@@ -333,10 +417,10 @@ def run_live(
                 if not controller.pending_ready():
                     time.sleep(0.05)
                     continue
-                recorded_segments.extend(_flush_ready_segments(controller, time_sync))
+                recorded_segments.extend(_flush_ready_segments(controller, time_sync, trigger))
                 break
             else:
-                recorded_segments.extend(_flush_ready_segments(controller, time_sync))
+                recorded_segments.extend(_flush_ready_segments(controller, time_sync, trigger))
 
     elapsed = time.monotonic() - started
     report: dict = {
@@ -368,7 +452,7 @@ def run_live(
         ],
         "started_at": datetime.fromtimestamp(started_wall, tz=timezone.utc).isoformat(),
     }
-    if event_recording and storage is not None and controller is not None:
+    if need_recording and storage is not None and controller is not None:
         report["recording"] = {
             "buffer_sec": settings.recording_buffer_sec,
             "codec": settings.encoding_codec,
@@ -412,7 +496,7 @@ def main() -> int:
     parser.add_argument(
         "--no-event-recording",
         action="store_true",
-        help="disable Phase 4 NVENC recording on person trigger",
+        help="disable YOLO auto-trigger NVENC recording (manual REC via --with-monitoring still works)",
     )
     parser.add_argument("--output", type=Path, default=None, help="JSON report path")
     parser.add_argument(

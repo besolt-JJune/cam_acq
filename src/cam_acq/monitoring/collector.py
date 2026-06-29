@@ -116,6 +116,12 @@ class DashboardCollector:
             "schema_version": SCHEMA_VERSION,
             "collected_at": system["collected_at"],
             "health": health.to_dict(),
+            "features": self.features_payload(),
+            "stream": {
+                "width": self._settings.resize_width,
+                "height": self._settings.resize_height,
+                "max_fps": self._settings.ui_max_display_fps,
+            },
             "system": system,
             "cameras": cameras,
             "recording": recording,
@@ -194,6 +200,7 @@ class DashboardCollector:
             "collected_at": body["collected_at"],
             "status": health["status"],
             "warnings": health["warnings"],
+            "features": body["features"],
             "system": body["system"],
             "cameras": body["cameras"],
             "recording": body["recording"],
@@ -211,3 +218,36 @@ class DashboardCollector:
             if cam["camera_index"] == camera_index:
                 return cam
         return None
+
+    def manual_recording_start(self) -> dict[str, Any]:
+        """Start manual all-channel recording until manual_recording_stop."""
+        _, _, rec, trig, _ = hooks_snapshot(self._hooks)
+        if rec is None or trig is None:
+            raise RuntimeError("recording not enabled")
+        action = trig.manual_start()
+        rec.apply_trigger_action(action)
+        assert action.decision is not None
+        return action.decision.as_dict()
+
+    def manual_recording_stop(self) -> dict[str, Any]:
+        """End manual recording; encode after pending window is ready."""
+        _, _, rec, trig, _ = hooks_snapshot(self._hooks)
+        if rec is None or trig is None:
+            raise RuntimeError("recording not enabled")
+        action = trig.manual_stop()
+        rec.apply_trigger_action(action)
+        pending = rec.status_snapshot(manual_active=False).get("pending") or {}
+        return {"ok": True, "ended_at_host_us": action.ended_at_host_us, "pending": pending}
+
+    def manual_recording_trigger(self) -> dict[str, Any]:
+        """Alias for manual_recording_start (legacy API name)."""
+        return self.manual_recording_start()
+
+    def features_payload(self) -> dict[str, bool]:
+        """Which optional dashboard features are active."""
+        _, _, rec, trig, _ = hooks_snapshot(self._hooks)
+        return {
+            "params": self._hooks.param_store is not None,
+            "recording": rec is not None and trig is not None,
+            "stream": self._hooks.param_store is not None,
+        }

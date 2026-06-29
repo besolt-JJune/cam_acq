@@ -17,6 +17,8 @@ class PipelineHooks:
     """Thread-safe registry updated by grab/YOLO/recording loops."""
 
     def __init__(self, *, param_store: RuntimeParamStore | None = None) -> None:
+        from cam_acq.monitoring.thumbnails import ThumbnailStore
+
         self._lock = threading.Lock()
         self._grab: dict[int, GrabStats] = {}
         self._detection: dict[int, DetectionFrameEvent] = {}
@@ -24,6 +26,12 @@ class PipelineHooks:
         self._trigger: RecordingTrigger | None = None
         self._time_sync: SessionTimeSync | None = None
         self._param_store = param_store
+        self._thumbnails = ThumbnailStore()
+
+    @property
+    def thumbnails(self) -> ThumbnailStore:
+        """Latest resize JPEG frames for MJPEG streams."""
+        return self._thumbnails
 
     @property
     def param_store(self) -> RuntimeParamStore | None:

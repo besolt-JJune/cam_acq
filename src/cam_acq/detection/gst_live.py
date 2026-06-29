@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 import typing_extensions  # noqa: F401 — pin venv before dist-packages prepend (pydantic Sentinel)
@@ -21,6 +22,7 @@ from gi.repository import Gst, GLib  # noqa: E402
 import numpy as np
 
 from cam_acq.detection.gst_meta import LiveDetectionBridge, attach_nvinfer_detection_probe
+from cam_acq.detection.gst_thumb import attach_resize_thumbnail_probe
 
 
 def _ensure_gst_plugins() -> None:
@@ -50,6 +52,7 @@ class DeepStreamYoloLive:
         bayer_width: int = 0,
         bayer_height: int = 0,
         bayer_gst_format: str = "rggb",
+        on_yolo_input_frame: Callable[[int, np.ndarray], None] | None = None,
     ) -> None:
         if num_cameras < 1:
             raise ValueError("num_cameras must be >= 1")
@@ -69,6 +72,7 @@ class DeepStreamYoloLive:
         self._nvinfer_config = nvinfer_config.resolve()
         self._record_path = record_path.resolve() if record_path else None
         self._detection_bridge = detection_bridge
+        self._on_yolo_input_frame = on_yolo_input_frame
 
         self.pipeline = Gst.Pipeline.new("cam-acq-yolo-live")
         self.appsrcs: list[Gst.Element] = []
@@ -129,6 +133,15 @@ class DeepStreamYoloLive:
                     raise RuntimeError(f"link failed convert{i}->conv{i}")
                 if not nvconv.link(caps):
                     raise RuntimeError(f"link failed conv{i}->caps{i}")
+                if self._on_yolo_input_frame is not None:
+                    attach_resize_thumbnail_probe(
+                        resize_caps,
+                        i,
+                        self._on_yolo_input_frame,
+                        width=self.width,
+                        height=self.height,
+                        min_interval_sec=0.0,
+                    )
                 tail_el = caps
             else:
                 convert = Gst.ElementFactory.make("nvvideoconvert", f"conv{i}")
@@ -247,7 +260,7 @@ class DeepStreamYoloLive:
             raise ValueError(f"expected {self.num_cameras} frames, got {len(frames)}")
         pts = self._pts
         dur = self.frame_duration_ns
-        for appsrc, frame in zip(self.appsrcs, frames):
+        for i, (appsrc, frame) in enumerate(zip(self.appsrcs, frames)):
             if frame.shape != (self.height, self.width, 3):
                 raise ValueError(f"bad frame shape {frame.shape}")
             # ponytail: RGB width*3 is often not 4-byte aligned (e.g. 1006→3018); use RGBA
@@ -262,6 +275,8 @@ class DeepStreamYoloLive:
             ret = appsrc.emit("push-buffer", buf)
             if ret != Gst.FlowReturn.OK:
                 raise RuntimeError(f"appsrc push-buffer failed: {ret}")
+            if self._on_yolo_input_frame is not None:
+                self._on_yolo_input_frame(i, frame)
         self._pts += dur
 
     def push_bayer_batch(self, frames: list) -> None:

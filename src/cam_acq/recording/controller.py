@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
 from cam_acq.camera.timesync import SessionTimeSync
 from cam_acq.config import NOMINAL_FPS
-from cam_acq.detection.events import DetectionFrameEvent, TriggerDecision
+from cam_acq.detection.events import DetectionFrameEvent, TriggerAction, TriggerDecision
 from cam_acq.recording.buffer import (
     BayerRingBuffer,
     BufferedFrame,
@@ -76,16 +76,40 @@ class RecordingController:
         return None
 
     def schedule_trigger(self, decision: TriggerDecision) -> None:
-        """Queue trigger for encode after post-buffer elapses."""
+        """Queue trigger; manual overrides auto, auto never replaces manual pending."""
+        if not decision.manual and self._pending is not None and self._pending.manual:
+            return
         self._pending = decision
 
+    def apply_trigger_action(self, action: TriggerAction) -> None:
+        """Apply schedule / extend / finalize from RecordingTrigger."""
+        if action.kind == "schedule":
+            if action.decision is None:
+                return
+            self.schedule_trigger(action.decision)
+        elif action.kind == "extend_end":
+            if (
+                action.ended_at_host_us is None
+                or self._pending is None
+                or self._pending.manual
+            ):
+                return
+            self._pending = replace(
+                self._pending, ended_at_host_us=action.ended_at_host_us
+            )
+        elif action.kind == "finalize_end":
+            if action.ended_at_host_us is None or self._pending is None:
+                return
+            self._pending = replace(
+                self._pending, ended_at_host_us=action.ended_at_host_us
+            )
+
     def pending_ready(self, now_host_us: int | None = None) -> bool:
-        """True when post-buffer window has passed and encode can run."""
+        """True when session end time passed (ended_at includes event silence tail)."""
         if self._pending is None:
             return False
         now = int(time.monotonic() * 1_000_000) if now_host_us is None else now_host_us
-        post_end = self._pending.ended_at_host_us + int(self.buffer_sec * 1_000_000)
-        return now >= post_end
+        return now >= self._pending.ended_at_host_us
 
     def take_pending_window_frames(
         self,
@@ -97,7 +121,7 @@ class RecordingController:
         self._pending = None
         pre_us = int(self.buffer_sec * 1_000_000)
         win_start = decision.started_at_host_us - pre_us
-        win_end = decision.ended_at_host_us + pre_us
+        win_end = decision.ended_at_host_us
         frames = {
             idx: self._rings[idx].frames_in_host_window(win_start, win_end)
             for idx in decision.camera_indices
@@ -119,7 +143,7 @@ class RecordingController:
             self._pending = None
             pre_us = int(self.buffer_sec * 1_000_000)
             win_start = decision.started_at_host_us - pre_us
-            win_end = decision.ended_at_host_us + pre_us
+            win_end = decision.ended_at_host_us
             return self._encode_window(
                 decision=decision,
                 win_start_us=win_start,
@@ -130,16 +154,18 @@ class RecordingController:
         finally:
             self._encoding = False
 
-    def status_snapshot(self) -> dict[str, Any]:
-        """Monitoring: idle | post_buffer | ready_to_flush | encoding."""
+    def status_snapshot(self, *, manual_active: bool = False) -> dict[str, Any]:
+        """Monitoring: idle | recording | post_buffer | ready_to_flush | encoding."""
         if self._encoding:
             state = "encoding"
         elif self._pending is None:
             state = "idle"
-        elif not self.pending_ready():
-            state = "post_buffer"
-        else:
+        elif self.pending_ready():
             state = "ready_to_flush"
+        elif manual_active:
+            state = "recording"
+        else:
+            state = "post_buffer"
         pending_dict = self._pending.as_dict() if self._pending else None
         return {
             "state": state,
@@ -186,6 +212,7 @@ class RecordingController:
                     camera_index=camera_index,
                     segment_index=segment_index,
                     when=segment_when,
+                    manual=decision.manual,
                 )
                 paths = self.storage.segment_paths(basename)
                 encode_bayer_frames_to_mp4(

@@ -136,10 +136,20 @@ class StorageManager:
                 pass
         return removed
 
-    def make_basename(self, *, camera_index: int, segment_index: int, when: float | None = None) -> str:
+    def make_basename(
+        self,
+        *,
+        camera_index: int,
+        segment_index: int,
+        when: float | None = None,
+        manual: bool = False,
+    ) -> str:
         """Timestamped basename without extension; ``when`` is POSIX epoch seconds (shared across cameras)."""
         ts = datetime.fromtimestamp(when or time.time()).strftime("%Y%m%d_%H%M%S")
-        return f"{ts}_cam{camera_index}_seg{segment_index:02d}"
+        base = f"{ts}_cam{camera_index}_seg{segment_index:02d}"
+        if manual:
+            base += "_manual"
+        return base
 
     def segment_paths(self, basename: str) -> dict[str, Path]:
         """mp4/json/jsonl paths under active storage."""

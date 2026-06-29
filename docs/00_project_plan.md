@@ -50,7 +50,7 @@
 | ---------- | ------------------------------------------------------- |
 | 카메라 인덱스    | **0-based** (`CAMERA0_IP` = 인덱스 0, IP octet과 무관)        |
 | Pre-buffer | **Full 4K Bayer raw** (RAM ring buffer)                 |
-| Buffer 시간  | `RECORDING_BUFFER_SEC` 단일 (pre/post 공용)                 |
+| Buffer 시간  | `RECORDING_BUFFER_SEC`: ring **pre** 용량 + **event 침묵 종료** 대기 (아래 §3.2) |
 | 저장 경로      | `STORAGE_PATH` (primary) + `STORAGE_PATH_SUB` (fallback) |
 | 녹화 범위      | **전 채널 동시** (3대)                                        |
 | Demosaic   | Pre-buffer는 Bayer 유지, **녹화 encode 직전 GPU debayer 필수**   |
@@ -145,7 +145,7 @@
 | 4.1 | Full 4K Bayer pre-buffer (RAM ring) | ✅ `recording/buffer.py` | ✅ unit |
 | 4.2 | Bayer → debayer → NVENC | ✅ `recording/gst_encode.py` (`bayer2rgb` + `cudaupload` + `nvcuda*enc`) | `cam-acq-record-test` ✅ |
 | 4.3 | Human detection + auto trigger | ✅ `yolo-live` + `RecordingController` | **추후** (사람 walk-through E2E) |
-| 4.4 | post-buffer (`RECORDING_BUFFER_SEC`) | ✅ `RecordingController` | `cam-acq-record-test` |
+| 4.4 | Event 침묵 종료 + manual start/stop | ✅ `RecordingTrigger` + `RecordingController` | `cam-acq-record-test`, `tests/test_detection.py` |
 | 4.5 | Split recording | ✅ segment split in controller | `cam-acq-record-test` |
 | 4.6 | H.265 vs H.264 프로파일링 | **cam0 ✅** → **H.264** | `cam-acq-codec-profile` |
 | 4.7 | 메타데이터 (`.json` + `.frames.jsonl`) | ✅ `recording/metadata.py` | `cam-acq-record-test` |
@@ -199,14 +199,14 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 
 | ID  | 작업 | 코드 | 검증 |
 | --- | --- | --- | --- |
-| 5.1 | Data Collector (FPS, detection, storage, 연결, pre-buffer, timesync) | ✅ `DashboardCollector` + `PipelineHooks` | hooks 연동 시 |
+| 5.1 | Data Collector (FPS, detection, storage, 연결, pre-buffer, timesync) | ✅ `DashboardCollector` + `PipelineHooks` | `cam-acq-yolo-live --with-monitoring` |
 | 5.2 | Host metrics — CPU, RAM, GPU, NVENC/NVDEC, VRAM, 온도, RSS, disk I/O, NIC | ✅ `host_metrics.py` | `cam-acq-monitoring` |
-| 5.3 | Dashboard UI — 시스템 패널 + 카메라 카드 + storage footer | ✅ `static/index.html` | WebSocket |
-| 5.4 | 수동 녹화 트리거 UI | **추후** | `POST /api/recording/trigger` |
+| 5.3 | Dashboard UI — 시스템 패널 + 카메라 카드(스트림/bbox) + storage | ✅ `static/index.html` | WebSocket |
+| 5.4 | 수동 녹화 UI (start/stop, 진행 시간) | ✅ | `POST /api/recording/trigger`, `POST /api/recording/stop` |
 | 5.5 | REST `/api/health`, `/api/system/metrics`, `/api/cameras/{id}/stats` | ✅ | curl |
 | 5.6 | WebSocket `/api/ws/dashboard` | ✅ | |
-| 5.7 | 썸네일 스트림 (MJPEG/WS) | **추후** | `02_streaming_design.md` |
-| 5.8 | 카메라 파라미터 설정 UI (별도 설정 창 + Apply → PATCH) | **추후** | REST `GET/PATCH .../params` ✅ (`10_monitoring_design.md` §3.1) |
+| 5.7 | 썸네일 스트림 (MJPEG) | ✅ | `GET /api/stream/{camera_index}` |
+| 5.8 | 카메라 파라미터 설정 UI (별도 설정 창 + Apply → PATCH) | ✅ | REST `GET/PATCH .../params` + `--with-monitoring` |
 
 상세: `10_monitoring_design.md`
 
@@ -219,9 +219,9 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 | #   | 시나리오                       | 기대 결과                            |
 | --- | -------------------------- | -------------------------------- |
 | T1  | Human detection trigger 녹화 | 3채널 파일 생성                        |
-| T2  | 수동 trigger                 | 동일                               |
-| T3  | Pre-buffer                 | 이벤트 **이전** 영상 포함                 |
-| T4  | Post-buffer                | 검출 종료 **이후** 영상 포함               |
+| T2  | 수동 start → stop              | `*_manual.mp4` + 메타 생성              |
+| T3  | Pre-buffer                 | 이벤트 **이전** 영상 포함 (`RECORDING_BUFFER_SEC`) |
+| T4  | Event 침묵 tail            | 마지막 person 검출 후 **연속** `RECORDING_BUFFER_SEC` 무검출 시 종료 |
 | T5  | Split interval             | 파일 분할 시간 일치                      |
 | T6  | 메타데이터                      | `.json` + `.frames.jsonl` 유효성    |
 | T7  | FIFO_DELETE                | 오래된 파일부터 삭제                      |

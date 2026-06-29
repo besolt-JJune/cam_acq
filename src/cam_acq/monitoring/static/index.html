@@ -8,43 +8,74 @@
     :root {
       --bg: #0f1419; --panel: #1a2332; --text: #e7ecf3; --muted: #8b9cb3;
       --ok: #3dd68c; --warn: #f5a524; --crit: #f31260; --bar-bg: #2a3548;
+      --accent: #4c9aff;
     }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
-    header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid #2a3548; }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid #2a3548; gap: 1rem; flex-wrap: wrap; }
     h1 { margin: 0; font-size: 1.25rem; }
+    .toolbar { display: flex; gap: 0.5rem; align-items: center; }
+    .btn { background: #243044; color: var(--text); border: 1px solid #3a4a63; border-radius: 8px; padding: 0.4rem 0.85rem; cursor: pointer; font-size: 0.85rem; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.danger { background: #5a2030; border-color: var(--crit); }
     .badge { padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; background: #243044; }
     .badge.pass { color: var(--ok); } .badge.degraded { color: var(--warn); } .badge.fail { color: var(--crit); }
     main { padding: 1rem 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
-    .grid { display: grid; grid-template-columns: 320px 1fr; gap: 1rem; }
-    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    .grid { display: grid; grid-template-columns: 1fr 300px; gap: 1rem; align-items: start; }
+    @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+    .cameras-panel { min-width: 0; }
+    .metrics-panel { font-size: 0.92rem; }
     .panel { background: var(--panel); border-radius: 12px; padding: 1rem 1.25rem; }
     .panel h2 { margin: 0 0 1rem; font-size: 0.95rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
     .metric { margin-bottom: 0.85rem; }
     .metric label { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 0.3rem; }
     .bar { height: 8px; background: var(--bar-bg); border-radius: 4px; overflow: hidden; }
     .bar > span { display: block; height: 100%; width: 0%; background: var(--ok); transition: width 0.3s, background 0.3s; }
-    .bar.warn > span { background: var(--warn); } .bar.crit > span { background: var(--crit); }
+    .bar.warn > span { background: var(--warn); }
     .temp { font-size: 1.4rem; font-weight: 700; }
     .temp.warn { color: var(--warn); } .temp.crit { color: var(--crit); }
+    .metric-temps { display: flex; gap: 1rem; }
+    .metric-temps .temp-cell { flex: 1; min-width: 0; }
     .sub { font-size: 0.8rem; color: var(--muted); margin-top: 0.2rem; }
-    .cam-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; }
+    .cam-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 1rem; }
     .cam-card { background: #141c28; border-radius: 8px; padding: 0.75rem; font-size: 0.85rem; }
     .cam-card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+    .stream-wrap { position: relative; width: 100%; aspect-ratio: var(--stream-ar, 1006 / 760); max-height: min(72vh, 760px); background: #0a0e14; border-radius: 6px; overflow: hidden; margin-bottom: 0.5rem; }
+    .stream-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .stream-wrap canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+    .cam-meta { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
     .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
     .dot.online { background: var(--ok); } .dot.offline { background: var(--crit); } .dot.unknown { background: var(--muted); }
     footer { padding: 0 1.5rem 1.5rem; color: var(--muted); font-size: 0.85rem; }
     code { font-size: 0.8rem; }
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; }
+    .modal-backdrop.open { display: flex; }
+    .modal { background: var(--panel); border-radius: 12px; padding: 1.25rem; width: min(420px, 92vw); max-height: 90vh; overflow: auto; }
+    .modal h2 { margin: 0 0 1rem; font-size: 1.1rem; }
+    .field { margin-bottom: 0.75rem; }
+    .field label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.25rem; }
+    .field input, .field select { width: 100%; padding: 0.45rem; border-radius: 6px; border: 1px solid #3a4a63; background: #141c28; color: var(--text); }
+    .modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
+    #params-status { font-size: 0.8rem; color: var(--muted); min-height: 1.2em; }
   </style>
 </head>
 <body>
   <header>
     <h1>Data Acquisition</h1>
-    <span id="health-badge" class="badge pass">시스템 OK</span>
+    <div class="toolbar">
+      <button class="btn danger" id="btn-record" disabled title="수동 녹화 (yolo-live --with-monitoring)">● REC</button>
+      <button class="btn" id="btn-settings" disabled>Camera Settings</button>
+      <span id="health-badge" class="badge pass">시스템 OK</span>
+    </div>
   </header>
   <main>
     <div class="grid">
-      <section class="panel">
+      <section class="panel cameras-panel">
+        <h2>카메라 라이브 (resize)</h2>
+        <div class="cam-grid" id="cam-grid"></div>
+      </section>
+      <section class="panel metrics-panel">
         <h2>시스템 리소스</h2>
         <div class="metric"><label><span>CPU</span><span id="cpu-val">—</span></label><div class="bar" id="cpu-bar"><span></span></div></div>
         <div class="metric"><label><span>RAM</span><span id="ram-val">—</span></label><div class="bar" id="ram-bar"><span></span></div></div>
@@ -52,7 +83,16 @@
         <div class="metric"><label><span>NVENC</span><span id="enc-val">—</span></label><div class="bar" id="enc-bar"><span></span></div></div>
         <div class="metric"><label><span>NVDEC</span><span id="dec-val">—</span></label><div class="bar" id="dec-bar"><span></span></div></div>
         <div class="metric"><label><span>VRAM</span><span id="vram-val">—</span></label><div class="bar" id="vram-bar"><span></span></div></div>
-        <div class="metric"><label><span>GPU 온도</span></label><div class="temp" id="gpu-temp">—</div></div>
+        <div class="metric metric-temps">
+          <div class="temp-cell">
+            <label><span>CPU 온도</span></label>
+            <div class="temp" id="cpu-temp">—</div>
+          </div>
+          <div class="temp-cell">
+            <label><span>GPU 온도</span></label>
+            <div class="temp" id="gpu-temp">—</div>
+          </div>
+        </div>
         <div class="metric" id="gpu-power-row" style="display:none"><label><span>GPU 전력</span><span id="gpu-power">—</span></label></div>
         <div class="metric"><label><span>프로세스 RSS</span><span id="rss-val">—</span></div>
         <div class="metric"><label><span>디스크 I/O</span><span id="diskio-val">—</span></label></div>
@@ -63,10 +103,6 @@
           <div class="sub" id="storage-active">—</div>
         </div>
         <div class="metric"><label><span>Pre-buffer RAM</span><span id="prebuf-val">—</span></label></div>
-      </section>
-      <section class="panel">
-        <h2>카메라</h2>
-        <div class="cam-grid" id="cam-grid"></div>
       </section>
     </div>
     <section class="panel">
@@ -79,8 +115,35 @@
     Recording: <strong id="recording-state">idle</strong>
     · <code>/api/ws/dashboard</code><span id="updated"></span>
   </footer>
+
+  <div class="modal-backdrop" id="params-modal">
+    <div class="modal">
+      <h2>Camera Settings</h2>
+      <div class="field">
+        <label>Camera</label>
+        <select id="params-cam"></select>
+      </div>
+      <div class="field"><label>ExposureTime (µs)</label><input id="p-exposure" type="number" step="1"></div>
+      <div class="field"><label>ExposureAuto</label><select id="p-exposure-auto"></select></div>
+      <div class="field"><label>AcquisitionFrameRate</label><input id="p-fps" type="number" step="0.1"></div>
+      <div class="field"><label>Gain</label><input id="p-gain" type="number" step="0.1"></div>
+      <div class="field"><label>GainAuto</label><select id="p-gain-auto"></select></div>
+      <div class="field"><label>GammaMode</label><select id="p-gamma-mode"></select></div>
+      <div class="field"><label>Gamma</label><input id="p-gamma" type="number" step="0.01"></div>
+      <div id="params-status"></div>
+      <div class="modal-actions">
+        <button class="btn" id="params-close">닫기</button>
+        <button class="btn" id="params-read">Read</button>
+        <button class="btn primary" id="params-apply">Apply</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const THRESH = { cpu: 85, ram: 85, gpu: 90, tempWarn: 80, tempCrit: 90, storage: 90 };
+    let features = { params: false, recording: false, stream: false };
+    let lastCameras = [];
+    let manualRecording = false;
 
     function setBar(id, pct, warnAt) {
       const wrap = document.getElementById(id);
@@ -88,14 +151,52 @@
       const span = wrap.querySelector("span");
       const v = pct == null ? 0 : Math.min(100, pct);
       span.style.width = v + "%";
-      wrap.classList.remove("warn", "crit");
+      wrap.classList.remove("warn");
       if (pct != null && pct >= warnAt) wrap.classList.add("warn");
     }
     function fmtGb(b) { return b == null ? "—" : (b / (1024**3)).toFixed(1) + " GB"; }
     function fmtMb(b) { return b == null ? "—" : (b / (1024**2)).toFixed(0) + " MB"; }
     function fmtRate(b) { return b == null ? "—" : (b / (1024**2)).toFixed(1) + " MB/s"; }
+    function fmtElapsed(sec) {
+      if (sec == null) return "";
+      const total = Math.floor(sec);
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+      return m + ":" + String(s).padStart(2, "0");
+    }
+    function formatRecordingState(rec) {
+      const state = rec.state || "idle";
+      if (rec.manual_active && rec.manual_elapsed_sec != null) {
+        return "recording (manual) · " + fmtElapsed(rec.manual_elapsed_sec);
+      }
+      return state;
+    }
+
+    function drawBboxes(cameraIndex, detections) {
+      const canvas = document.getElementById("bbox-" + cameraIndex);
+      const img = document.getElementById("stream-" + cameraIndex);
+      if (!canvas || !img) return;
+      const rect = img.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!detections || !detections.length || !img.naturalWidth) return;
+      const sx = canvas.width / img.naturalWidth;
+      const sy = canvas.height / img.naturalHeight;
+      ctx.strokeStyle = "#3dd68c";
+      ctx.lineWidth = 2;
+      for (const d of detections) {
+        const b = d.bbox_resized;
+        if (!b) continue;
+        ctx.strokeRect(b.x1 * sx, b.y1 * sy, (b.x2 - b.x1) * sx, (b.y2 - b.y1) * sy);
+      }
+    }
 
     function renderCameras(cameras) {
+      lastCameras = cameras || [];
       const el = document.getElementById("cam-grid");
       if (!cameras || !cameras.length) {
         el.innerHTML = '<p class="sub">파이프라인 미연결 — 설정된 카메라 슬롯만 표시됩니다.</p>';
@@ -104,20 +205,47 @@
       el.innerHTML = cameras.map(c => {
         const conn = c.connection || "unknown";
         const fps = c.fps_live != null ? c.fps_live.toFixed(1) + " fps" : "— fps";
+        const stream = features.stream
+          ? `<div class="stream-wrap"><img id="stream-${c.camera_index}" src="/api/stream/${c.camera_index}" alt="cam${c.camera_index}"><canvas id="bbox-${c.camera_index}"></canvas></div>`
+          : "";
         return `<div class="cam-card">
-          <h3><span class="dot ${conn}"></span>Cam ${c.camera_index}</h3>
-          <div>${c.ip}</div>
-          <div>${fps} · person ${c.person_count ?? 0}</div>
-          <div class="sub">drop ${c.frame_drops} · inc ${c.incomplete_frames}</div>
+          <h3><span class="dot ${conn}"></span>Cam ${c.camera_index} · ${c.ip}</h3>
+          ${stream}
+          <div class="cam-meta">
+            <span>${fps}</span>
+            <span>person ${c.person_count ?? 0}</span>
+            <span class="sub">drop ${c.frame_drops} · inc ${c.incomplete_frames}</span>
+          </div>
         </div>`;
       }).join("");
+      for (const c of cameras) {
+        drawBboxes(c.camera_index, c.detections);
+      }
     }
 
     function applyPayload(data) {
+      features = data.features || features;
+      if (data.stream) {
+        document.documentElement.style.setProperty(
+          "--stream-ar",
+          `${data.stream.width} / ${data.stream.height}`,
+        );
+      }
+      document.getElementById("btn-record").disabled = !features.recording;
+      const rec = data.recording || {};
+      manualRecording = rec.manual_active === true || (rec.pending && rec.pending.manual === true && rec.state === "recording");
+      const btnRec = document.getElementById("btn-record");
+      btnRec.textContent = manualRecording ? "■ STOP" : "● REC";
+      btnRec.title = manualRecording ? "수동 녹화 종료" : "수동 녹화 시작";
+      document.getElementById("btn-settings").disabled = !features.params;
+
       const sys = data.system || {};
       const cpu = sys.cpu || {}, mem = sys.memory || {}, gpu = sys.gpu || null;
       document.getElementById("cpu-val").textContent = cpu.percent != null ? cpu.percent.toFixed(1) + "%" : "—";
       setBar("cpu-bar", cpu.percent, THRESH.cpu);
+      const cpuTempEl = document.getElementById("cpu-temp");
+      cpuTempEl.textContent = cpu.temperature_c != null ? cpu.temperature_c.toFixed(0) + "°C" : "—";
+      cpuTempEl.className = "temp" + (cpu.temperature_c >= THRESH.tempCrit ? " crit" : cpu.temperature_c >= THRESH.tempWarn ? " warn" : "");
       document.getElementById("ram-val").textContent = mem.percent != null
         ? mem.percent.toFixed(1) + "% (" + fmtGb(mem.used_bytes) + " / " + fmtGb(mem.total_bytes) + ")" : "—";
       setBar("ram-bar", mem.percent, THRESH.ram);
@@ -142,48 +270,186 @@
           document.getElementById("gpu-power").textContent = gpu.power_w.toFixed(0) + " W";
         }
       }
-      const proc = sys.process || {};
-      document.getElementById("rss-val").textContent = fmtMb(proc.rss_bytes);
+      document.getElementById("rss-val").textContent = fmtMb((sys.process || {}).rss_bytes);
       const dio = sys.disk_io || {};
-      document.getElementById("diskio-val").textContent =
-        "R " + fmtRate(dio.read_bytes_per_sec) + " · W " + fmtRate(dio.write_bytes_per_sec);
+      document.getElementById("diskio-val").textContent = "R " + fmtRate(dio.read_bytes_per_sec) + " · W " + fmtRate(dio.write_bytes_per_sec);
       const pb = data.prebuffer || {};
-      document.getElementById("prebuf-val").textContent =
-        fmtGb(pb.bytes_total) + (pb.source === "estimated" ? " (est.)" : "");
+      document.getElementById("prebuf-val").textContent = fmtGb(pb.bytes_total) + (pb.source === "estimated" ? " (est.)" : "");
 
       renderCameras(data.cameras);
+      for (const c of (data.cameras || [])) drawBboxes(c.camera_index, c.detections);
+
       const nets = sys.network || [];
       document.getElementById("net-list").textContent = nets.length
-        ? nets.map(n => n.name + ": ↓" + fmtRate(n.bytes_recv_per_sec) + " ↑" + fmtRate(n.bytes_sent_per_sec)
-          + (n.errin ? " err " + n.errin : "")).join(" · ")
+        ? nets.map(n => n.name + ": ↓" + fmtRate(n.bytes_recv_per_sec) + " ↑" + fmtRate(n.bytes_sent_per_sec)).join(" · ")
         : "NIC 미설정 (CAMERA*_INTERFACE)";
       const ts = data.timesync || {};
       document.getElementById("timesync").textContent = ts.available
-        ? `skew live ${ts.live_max_skew_us ?? "—"} µs / tol ${ts.cross_camera_skew_tolerance_ms} ms`
-          + (ts.skew_exceeded ? " ⚠ exceeded" : "")
+        ? `skew live ${ts.live_max_skew_us ?? "—"} µs / tol ${ts.cross_camera_skew_tolerance_ms} ms` + (ts.skew_exceeded ? " ⚠" : "")
         : "TimeSync: 세션 미연결";
 
-      const stg = sys.storage || data.storage || {};
+      const stg = sys.storage || {};
       const warnAt = stg.warn_percent != null ? stg.warn_percent : THRESH.storage;
       document.getElementById("storage-val").textContent = !stg.accessible ? "접근 불가"
         : stg.percent != null ? stg.percent.toFixed(1) + "% (" + fmtGb(stg.free_bytes) + " free)" : "—";
       setBar("storage-bar", stg.percent, warnAt);
       document.getElementById("storage-path").textContent = "STORAGE_PATH: " + (stg.path || "—");
-      const active = stg.active_path
-        ? "녹화 경로: " + stg.active_path + (stg.active_is_fallback ? " (fallback)" : " (primary)")
-        : "";
-      document.getElementById("storage-active").textContent = active + (stg.primary_reject_reason ? " · primary reject: " + stg.primary_reject_reason : "");
+      document.getElementById("storage-active").textContent = stg.active_path
+        ? "녹화: " + stg.active_path + (stg.active_is_fallback ? " (fallback)" : " (primary)") : "";
 
-      const rec = data.recording || {};
-      document.getElementById("recording-state").textContent = rec.state || "idle";
-
-      const health = data.health || { status: data.status, warnings: data.warnings || [] };
+      document.getElementById("recording-state").textContent = formatRecordingState(data.recording || {});
+      const health = data.health || { status: data.status };
       const st = (health.status || "PASS").toLowerCase();
       const badge = document.getElementById("health-badge");
       badge.className = "badge " + st;
       badge.textContent = { pass: "시스템 OK", degraded: "주의", fail: "위험" }[st] || health.status;
       document.getElementById("updated").textContent = " · " + (data.collected_at || "");
     }
+
+    async function triggerRecord() {
+      const btn = document.getElementById("btn-record");
+      btn.disabled = true;
+      const url = manualRecording ? "/api/recording/stop" : "/api/recording/trigger";
+      try {
+        const r = await fetch(url, { method: "POST" });
+        const text = await r.text();
+        if (!r.ok) {
+          alert((manualRecording ? "녹화 종료" : "녹화 시작") + " 실패: " + text);
+          return;
+        }
+        const data = JSON.parse(text);
+        if (manualRecording) {
+          document.getElementById("recording-state").textContent = "post_buffer (manual)";
+          manualRecording = false;
+        } else {
+          document.getElementById("recording-state").textContent = "recording (manual) · 0:00";
+          manualRecording = true;
+        }
+      } catch (e) {
+        alert("녹화 요청 실패: " + e);
+      } finally {
+        btn.disabled = !features.recording;
+        btn.textContent = manualRecording ? "■ STOP" : "● REC";
+      }
+    }
+
+    const ENUM_DEFAULTS = {
+      exposure_auto: ["Off", "Once", "Continuous"],
+      gain_auto: ["Off", "Once", "Continuous"],
+      gamma_mode: ["User", "sRGB"],
+    };
+
+    function fillEnumSelect(id, field, options, value) {
+      const el = document.getElementById(id);
+      const labels = (options && options.length) ? options : (ENUM_DEFAULTS[field] || []);
+      const cur = value ?? "";
+      el.innerHTML = labels.map((o) => `<option value="${o}">${o}</option>`).join("");
+      if (cur && !labels.includes(cur)) {
+        const extra = document.createElement("option");
+        extra.value = cur;
+        extra.textContent = cur;
+        el.appendChild(extra);
+      }
+      el.value = cur || labels[0] || "";
+    }
+
+    function paramsStatusText(p) {
+      if (p.apply_pending) return "적용 중…";
+      if (p.last_apply_error) return "오류: " + p.last_apply_error;
+      return "적용됨";
+    }
+
+    function fillParamsForm(p) {
+      document.getElementById("p-exposure").value = p.exposure_time_us ?? "";
+      const opts = p.options || {};
+      fillEnumSelect("p-exposure-auto", "exposure_auto", opts.exposure_auto, p.exposure_auto);
+      document.getElementById("p-fps").value = p.acquisition_frame_rate ?? "";
+      document.getElementById("p-gain").value = p.gain ?? "";
+      fillEnumSelect("p-gain-auto", "gain_auto", opts.gain_auto, p.gain_auto);
+      fillEnumSelect("p-gamma-mode", "gamma_mode", opts.gamma_mode, p.gamma_mode);
+      document.getElementById("p-gamma").value = p.gamma ?? "";
+      document.getElementById("params-status").textContent = paramsStatusText(p);
+    }
+
+    async function fetchParams(camIdx) {
+      const r = await fetch("/api/cameras/" + camIdx + "/params");
+      if (!r.ok) {
+        const err = await r.text();
+        document.getElementById("params-status").textContent = err;
+        return null;
+      }
+      return r.json();
+    }
+
+    async function loadParams(camIdx) {
+      const p = await fetchParams(camIdx);
+      if (p) fillParamsForm(p);
+    }
+
+    async function waitParamsApplied(camIdx, timeoutMs = 8000) {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        const p = await fetchParams(camIdx);
+        if (!p) return null;
+        if (!p.apply_pending) return p;
+        document.getElementById("params-status").textContent = "적용 중…";
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      return fetchParams(camIdx);
+    }
+
+    function openParamsModal() {
+      const sel = document.getElementById("params-cam");
+      sel.innerHTML = "";
+      for (const c of lastCameras) {
+        if (c.connection === "offline") continue;
+        const o = document.createElement("option");
+        o.value = String(c.camera_index);
+        const tag = c.connection === "unknown" ? " (syncing)" : "";
+        o.textContent = "Cam " + c.camera_index + " (" + c.ip + ")" + tag;
+        sel.appendChild(o);
+      }
+      if (!sel.options.length) {
+        alert("설정 가능한 카메라 없음 (offline)");
+        return;
+      }
+      document.getElementById("params-modal").classList.add("open");
+      loadParams(sel.value);
+    }
+
+    document.getElementById("btn-record").onclick = triggerRecord;
+    document.getElementById("btn-settings").onclick = openParamsModal;
+    document.getElementById("params-close").onclick = () => document.getElementById("params-modal").classList.remove("open");
+    document.getElementById("params-read").onclick = () => loadParams(document.getElementById("params-cam").value);
+    document.getElementById("params-cam").onchange = (e) => loadParams(e.target.value);
+    document.getElementById("params-apply").onclick = async () => {
+      const cam = document.getElementById("params-cam").value;
+      const body = {};
+      const exp = document.getElementById("p-exposure").value;
+      if (exp !== "") body.exposure_time_us = parseFloat(exp);
+      body.exposure_auto = document.getElementById("p-exposure-auto").value;
+      const fps = document.getElementById("p-fps").value;
+      if (fps !== "") body.acquisition_frame_rate = parseFloat(fps);
+      const gain = document.getElementById("p-gain").value;
+      if (gain !== "") body.gain = parseFloat(gain);
+      body.gain_auto = document.getElementById("p-gain-auto").value;
+      body.gamma_mode = document.getElementById("p-gamma-mode").value;
+      const g = document.getElementById("p-gamma").value;
+      if (g !== "") body.gamma = parseFloat(g);
+      document.getElementById("params-status").textContent = "요청 전송…";
+      const r = await fetch("/api/cameras/" + cam + "/params", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) { document.getElementById("params-status").textContent = await r.text(); return; }
+      let p = await r.json();
+      fillParamsForm(p);
+      if (p.apply_pending) {
+        p = await waitParamsApplied(cam);
+        if (p) fillParamsForm(p);
+      }
+    };
 
     function connect() {
       const proto = location.protocol === "https:" ? "wss:" : "ws:";

@@ -93,7 +93,7 @@ def run_record_test(
         hooks = PipelineHooks(param_store=param_store)
         hooks.bind_recording(controller, trigger=trigger)
         hooks.bind_time_sync(time_sync)
-        collector = DashboardCollector(settings, hooks=hooks)
+        collector = DashboardCollector(settings, hooks=hooks, storage_manager=storage)
         start_monitoring_server(settings, collector)
 
     stop_at = time.monotonic() + duration_sec
@@ -118,11 +118,19 @@ def run_record_test(
         t.start()
 
     decision = None
+    manual_stopped = False
+    manual_record_sec = max(3.0, settings.recording_buffer_sec)
+    stop_manual_at = trigger_at + manual_record_sec
     while time.monotonic() < stop_at:
-        if decision is None and time.monotonic() >= trigger_at:
-            decision = trigger.manual_trigger()
-            controller.schedule_trigger(decision)
-        if controller.pending_ready():
+        now = time.monotonic()
+        if decision is None and now >= trigger_at:
+            action = trigger.manual_start()
+            controller.apply_trigger_action(action)
+            decision = action.decision
+        if decision is not None and not manual_stopped and now >= stop_manual_at:
+            controller.apply_trigger_action(trigger.manual_stop())
+            manual_stopped = True
+        if manual_stopped and controller.pending_ready():
             break
         time.sleep(0.05)
 
@@ -130,6 +138,7 @@ def run_record_test(
         t.join(timeout=5.0)
 
     segments = controller.flush_pending(time_sync=time_sync)
+    trigger.clear_session()
     if errors:
         print("\n".join(errors), file=sys.stderr)
 
@@ -186,8 +195,8 @@ def main() -> int:
         help="start REST API for runtime camera params (MONITORING_WEB_PORT)",
     )
     args = parser.parse_args()
-    if args.duration < args.trigger_at + 2:
-        print("duration must allow pre+post buffer after trigger", file=sys.stderr)
+    if args.duration < args.trigger_at + 3:
+        print("duration must allow manual record + encode after stop", file=sys.stderr)
         return 1
     return run_record_test(
         duration_sec=args.duration,

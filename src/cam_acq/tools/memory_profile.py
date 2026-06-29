@@ -145,18 +145,29 @@ def run_memory_profile(
     for t in threads:
         t.start()
 
+    decision = None
+    manual_stopped = False
+    manual_record_sec = max(3.0, settings.recording_buffer_sec)
+    stop_manual_at = trigger_at + manual_record_sec
     while time.monotonic() < stop_at:
         sample = _sample_dict(sampler)
         sample["phase"] = phase
         sample["ring_memory_bytes"] = controller.memory_report()
         samples.append(sample)
 
-        if decision is None and time.monotonic() >= trigger_at:
-            decision = trigger.manual_trigger()
-            controller.schedule_trigger(decision)
+        now = time.monotonic()
+        if decision is None and now >= trigger_at:
+            action = trigger.manual_start()
+            controller.apply_trigger_action(action)
+            decision = action.decision
+            phase = "manual_recording"
+
+        if decision is not None and not manual_stopped and now >= stop_manual_at:
+            controller.apply_trigger_action(trigger.manual_stop())
+            manual_stopped = True
             phase = "trigger_post_buffer"
 
-        if controller.pending_ready() and phase != "encoding":
+        if manual_stopped and controller.pending_ready() and phase != "encoding":
             phase = "encoding"
             encode_sample = _sample_dict(sampler)
             encode_sample["phase"] = "encoding_start"

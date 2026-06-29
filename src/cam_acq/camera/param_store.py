@@ -5,7 +5,7 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-from cam_acq.camera.params import ALL_PARAM_FIELDS, apply_camera_params, read_camera_params
+from cam_acq.camera.params import ALL_PARAM_FIELDS, apply_camera_params, read_camera_params, read_enum_options
 
 
 class RuntimeParamStore:
@@ -16,6 +16,7 @@ class RuntimeParamStore:
         self._lock = threading.Lock()
         self._desired: dict[int, dict[str, Any]] = {}
         self._current: dict[int, dict[str, Any]] = {}
+        self._enum_options: dict[int, dict[str, list[str]]] = {}
         self._pending: dict[int, bool] = {i: False for i in camera_indices}
         self._last_error: dict[int, str | None] = {i: None for i in camera_indices}
         self._apply_events: dict[int, threading.Event] = {
@@ -31,10 +32,13 @@ class RuntimeParamStore:
         if camera_index not in self._indices:
             return
         snapshot = read_camera_params(cam)
+        options = read_enum_options(cam)
         with self._lock:
             if camera_index not in self._desired:
                 self._desired[camera_index] = dict(snapshot)
             self._current[camera_index] = dict(snapshot)
+            if options:
+                self._enum_options[camera_index] = options
             self._last_error[camera_index] = None
 
     def queue_update(self, camera_index: int, updates: dict[str, Any]) -> None:
@@ -99,8 +103,11 @@ class RuntimeParamStore:
             current = dict(self._current.get(camera_index, {}))
             pending = bool(self._pending.get(camera_index))
             last_error = self._last_error.get(camera_index)
+            options = dict(self._enum_options.get(camera_index, {}))
         body: dict[str, Any] = {"camera_index": camera_index, "apply_pending": pending}
         for key in ALL_PARAM_FIELDS:
             body[key] = current.get(key)
         body["last_apply_error"] = last_error
+        if options:
+            body["options"] = options
         return body

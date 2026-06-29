@@ -132,6 +132,7 @@ def test_critical_gpu_temp_fails():
 
 def test_pipeline_hooks_camera_payload():
     from cam_acq.camera.grab import GrabStats
+    from cam_acq.monitoring.payloads import _connection_state
 
     hooks = PipelineHooks()
     st = GrabStats(camera_index=0, ip="10.0.0.1")
@@ -143,6 +144,10 @@ def test_pipeline_hooks_camera_payload():
     assert len(cams) == 1
     assert cams[0]["fps_live"] == 22.5
     assert cams[0]["connection"] == "online"
+
+    fps_only = GrabStats(camera_index=1, ip="10.0.0.2")
+    fps_only._fps_window.append(15.0)
+    assert _connection_state(fps_only) == "online"
 
 
 if __name__ == "__main__":
