@@ -90,6 +90,19 @@ max_days    = max_hours / 24
 
 동일 화질 기준 H.265가 용량 30~50% 절감. Phase 4에서 GPU 부하와 함께 최종 선택.
 
+### 4.1 Phase 4.6 cam0 실측 (2026-06-29, preliminary)
+
+`cam-acq-codec-profile` — cam0 단독, **4024×3036**@23fps, `ENCODING_BITRATE_MBPS=12`, buffer 5s, 윈도우 ~10s (234 frames).
+
+| 코덱 | 파일 (MB) | effective Mbps | encode 처리량 | NVENC peak % |
+|------|-----------|----------------|---------------|--------------|
+| H.264 | 19.3 | 16.0 | 45 fps | 28 |
+| H.265 | 20.6 | 17.0 | 80 fps | 50 |
+
+H.265/H.264 크기 비율 ≈ **1.07** (동일 target bitrate에서 H.265가 약 7% 큼 — 짧은 클립·VBR 특성).
+
+**미완:** 2ch 동시 + YOLO resize 부하, 운영 3ch. cam0-only 결과만으로 `ENCODING_CODEC` 최종 확정은 보류 (현재 `.env` 기본값 H.265 유지).
+
 ## 5. Pre-buffer RAM (Bayer, 녹화와 별도)
 
 ```

@@ -205,6 +205,21 @@ PASS (추후): `detection.trigger_events`에 `human_detection` + `recording.segm
 
 지금 가능한 대체: §6.6 `cam-acq-record-test` (수동 trigger), 단위 테스트 `tests/test_detection.py`.
 
+### 6.8 Phase 4.6 코덱 프로파일 (cam0)
+
+cam1 촬영 위치 부적합 → **cam0 단독**으로 동일 Bayer 윈도우를 H.264/H.265 각각 NVENC.
+
+```bash
+source venv.sh
+# buffer 5s → duration >= trigger_at + 2×5 (예: 28s / trigger 8s)
+uv run cam-acq-codec-profile --camera-index 0 --duration 28 --trigger-at 8 \
+  --output ./healthcheck/codec_profile.json
+```
+
+리포트: `encodes[]` — `file_bytes`, `encode_sec`, `effective_mbps`, `gpu_peak_util_pct`, `encoder_peak_util_pct`, `h265_vs_h264_size_ratio`.
+
+결과 반영: `.env` `ENCODING_CODEC`, `docs/07_storage_capacity.md` 표 갱신.
+
 ---
 
 ## 4. 관련 문서

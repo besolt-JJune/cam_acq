@@ -145,7 +145,7 @@
 | 4.3 | Human detection + auto trigger | ✅ `yolo-live` + `RecordingController` | **추후** (사람 walk-through E2E) |
 | 4.4 | post-buffer (`RECORDING_BUFFER_SEC`) | ✅ `RecordingController` | `cam-acq-record-test` |
 | 4.5 | Split recording | ✅ segment split in controller | `cam-acq-record-test` |
-| 4.6 | H.265 vs H.264 프로파일링 | **추후** | `.env` `ENCODING_CODEC` |
+| 4.6 | H.265 vs H.264 프로파일링 | **cam0 ✅** (2ch+YOLO 추후) | `cam-acq-codec-profile` |
 | 4.7 | 메타데이터 (`.json` + `.frames.jsonl`) | ✅ `recording/metadata.py` | `cam-acq-record-test` |
 | 4.8 | StorageManager (FIFO, fallback) | ✅ `recording/storage.py` | ✅ unit |
 | 4.9 | RAM/VRAM 실측 | **추후** | `record_test` 리포트 `ring_memory_bytes` |

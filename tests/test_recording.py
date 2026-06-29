@@ -58,6 +58,54 @@ def test_storage_fifo_cleanup_api():
         assert sm.maybe_fifo_cleanup() == 0
 
 
+def test_take_pending_window_frames():
+    """Codec profile drains pending window without NVENC encode."""
+    from cam_acq.detection.events import TriggerDecision
+    from cam_acq.recording.buffer import BufferedFrame
+    from cam_acq.recording.controller import RecordingController
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sm = StorageManager(Path(tmp) / "primary", Path(tmp) / "sub")
+        ctrl = RecordingController(
+            storage=sm,
+            camera_indices=(0,),
+            buffer_sec=2.0,
+            split_interval_sec=60.0,
+            pixel_format="BayerRG8",
+            codec="H264",
+            bitrate_bps=8_000_000,
+            gpu_id=0,
+            fps=10.0,
+        )
+        ring = ctrl._rings[0]
+        for i in range(5):
+            ring.push(
+                BufferedFrame(
+                    frame_id=i,
+                    timestamp_tick=i * 1000,
+                    host_recv_us=i * 1_000_000,
+                    width=4,
+                    height=2,
+                    data=bytes(8),
+                )
+            )
+        decision = TriggerDecision(
+            trigger_type="human_detection",
+            source="manual",
+            started_at_host_us=2_000_000,
+            ended_at_host_us=3_000_000,
+            manual=True,
+            camera_indices=(0,),
+        )
+        ctrl.schedule_trigger(decision)
+        taken = ctrl.take_pending_window_frames()
+        assert taken is not None
+        got_decision, frames = taken
+        assert got_decision.source == "manual"
+        assert len(frames[0]) >= 1
+        assert ctrl.take_pending_window_frames() is None
+
+
 def test_encode_bayer_mp4_optional():
     """GPU encode smoke test; skipped unless GST_ENCODE_TEST=1."""
     import os
@@ -99,5 +147,6 @@ if __name__ == "__main__":
     test_storage_fallback()
     test_basename_same_timestamp_across_cameras()
     test_storage_fifo_cleanup_api()
+    test_take_pending_window_frames()
     test_encode_bayer_mp4_optional()
     print("ok")

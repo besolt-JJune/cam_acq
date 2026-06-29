@@ -86,6 +86,23 @@ class RecordingController:
         post_end = self._pending.ended_at_host_us + int(self.buffer_sec * 1_000_000)
         return now >= post_end
 
+    def take_pending_window_frames(
+        self,
+    ) -> tuple[TriggerDecision, dict[int, list[BufferedFrame]]] | None:
+        """Return pre/trigger/post window frames and clear pending without encoding."""
+        if self._pending is None:
+            return None
+        decision = self._pending
+        self._pending = None
+        pre_us = int(self.buffer_sec * 1_000_000)
+        win_start = decision.started_at_host_us - pre_us
+        win_end = decision.ended_at_host_us + pre_us
+        frames = {
+            idx: self._rings[idx].frames_in_host_window(win_start, win_end)
+            for idx in decision.camera_indices
+        }
+        return decision, frames
+
     def flush_pending(
         self,
         *,
