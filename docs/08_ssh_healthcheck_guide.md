@@ -193,11 +193,18 @@ scp user@cam-server:/path/to/cam_acq/samples/*.jpg ./
 Phase 5 이후:
 
 ```bash
+uv run cam-acq-monitoring &
+
 curl -s localhost:8080/api/health | jq
-curl -s localhost:8080/api/system/metrics | jq '.cpu,.memory,.gpu'
+curl -s localhost:8080/api/system/metrics | jq '.cpu,.memory,.gpu,.disk_io'
+curl -s localhost:8080/api/system/metrics | jq '.storage'
+curl -s localhost:8080/api/health | jq '.system.storage,.cameras,.recording,.timesync,.prebuffer'
+curl -s localhost:8080/api/cameras/0/stats | jq
 ```
 
-Dashboard UI (시스템 패널 + 카메라 그리드): `10_monitoring_design.md`
+원격 Dashboard: SSH `-p 2258 -L 8080:localhost:8080 user@host` 후 로컬 `http://localhost:8080`
+
+Dashboard UI: `10_monitoring_design.md`
 
 ## 11. 트러블슈팅
 

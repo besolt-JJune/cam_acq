@@ -59,7 +59,9 @@ Docker는 사용하지 않는다 (전용 시스템 native 구동).
 export LD_LIBRARY_PATH=/path/to/cam_acq/sdk/Galaxy_camera/c/lib:$LD_LIBRARY_PATH
 ```
 
-영구 적용은 `~/.bashrc` 또는 systemd unit에 추가.
+영구 적용은 `~/.bashrc`(개발) 또는 systemd `Environment`/`cam-acq-run.sh`(운영)에 추가.
+
+운영 배포(systemd): [deploy/systemd/README.md](../deploy/systemd/README.md)
 
 ### 5.2 Python gxipy
 
@@ -143,3 +145,4 @@ trtexec --onnx=yolov8m.onnx --saveEngine=models/yolov8m_person.engine --fp16
 - `08_ssh_healthcheck_guide.md`
 - `06_yolo_build_porting_guide.md`
 - `00_project_plan.md`
+- `../deploy/systemd/README.md` — systemd 서비스 등록 (운영 전환 시)

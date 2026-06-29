@@ -33,5 +33,18 @@ uv run python -m cam_acq.tools.grab_healthcheck --duration 60 --save-sample ./sa
 | `uv run python -m cam_acq.tools.ptp_test` | PTP 미지원 확인 (부정 test) |
 | `uv run python -m cam_acq.tools.timestamp_test` | Timestamp feature probe / `--reset` |
 | `uv run python -m cam_acq.tools.grab_healthcheck` | FPS/drop soak + JSON 리포트 |
+| `uv run python -m cam_acq.tools.monitoring_server` | Phase 5 Dashboard (host metrics) |
 
 상세: [docs/08_ssh_healthcheck_guide.md](docs/08_ssh_healthcheck_guide.md)
+
+## systemd 서비스 등록 (운영 전환 시)
+
+개발·검증은 위처럼 `uv run`으로 수동 실행한다. 운영 배포 시 전용 유저 `cam-acq` + systemd unit을 쓴다.
+
+1. 저장소 권한: `sudo ./deploy/systemd/cam-acq-storage-setup.sh`
+2. 환경: `sudo cp deploy/systemd/cam-acq.env.example /etc/cam-acq/cam-acq.env` 후 편집
+3. 모니터링: `sudo cp deploy/systemd/cam-acq-monitoring.service /etc/systemd/system/` → `systemctl enable --now`
+
+메인 acquisition 유닛은 Phase 4.3 통합 데몬 이후 등록한다.
+
+**상세 절차:** [deploy/systemd/README.md](deploy/systemd/README.md)

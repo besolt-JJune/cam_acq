@@ -84,6 +84,14 @@ class Settings:
     debayer_backend: DebayerBackend
     gpu_id: int
     deepstream_yolo_lib: Path
+    monitoring_web_port: int
+    ui_max_display_fps: int
+    system_metrics_poll_sec: float
+    cpu_warn_percent: int
+    ram_warn_percent: int
+    gpu_util_warn_percent: int
+    gpu_temp_warn_c: int
+    gpu_temp_critical_c: int
 
     @property
     def camera_ips(self) -> list[str]:
@@ -174,6 +182,14 @@ def load_settings(env_file: Path | None = None) -> Settings:
                 "third_party/DeepStream-Yolo/nvdsinfer_custom_impl_Yolo/libnvdsinfer_custom_impl_Yolo.so",
             )
         ),
+        monitoring_web_port=_env_int("MONITORING_WEB_PORT", 8080),
+        ui_max_display_fps=_env_int("UI_MAX_DISPLAY_FPS", 15),
+        system_metrics_poll_sec=_env_float("SYSTEM_METRICS_POLL_SEC", 2.0),
+        cpu_warn_percent=_env_int("CPU_WARN_PERCENT", 85),
+        ram_warn_percent=_env_int("RAM_WARN_PERCENT", 85),
+        gpu_util_warn_percent=_env_int("GPU_UTIL_WARN_PERCENT", 90),
+        gpu_temp_warn_c=_env_int("GPU_TEMP_WARN_C", 80),
+        gpu_temp_critical_c=_env_int("GPU_TEMP_CRITICAL_C", 90),
     )
 
 

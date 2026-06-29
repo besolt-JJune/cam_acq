@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Data Acquisition</title>
+  <style>
+    :root {
+      --bg: #0f1419; --panel: #1a2332; --text: #e7ecf3; --muted: #8b9cb3;
+      --ok: #3dd68c; --warn: #f5a524; --crit: #f31260; --bar-bg: #2a3548;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid #2a3548; }
+    h1 { margin: 0; font-size: 1.25rem; }
+    .badge { padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.85rem; font-weight: 600; background: #243044; }
+    .badge.pass { color: var(--ok); } .badge.degraded { color: var(--warn); } .badge.fail { color: var(--crit); }
+    main { padding: 1rem 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
+    .grid { display: grid; grid-template-columns: 320px 1fr; gap: 1rem; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    .panel { background: var(--panel); border-radius: 12px; padding: 1rem 1.25rem; }
+    .panel h2 { margin: 0 0 1rem; font-size: 0.95rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .metric { margin-bottom: 0.85rem; }
+    .metric label { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 0.3rem; }
+    .bar { height: 8px; background: var(--bar-bg); border-radius: 4px; overflow: hidden; }
+    .bar > span { display: block; height: 100%; width: 0%; background: var(--ok); transition: width 0.3s, background 0.3s; }
+    .bar.warn > span { background: var(--warn); } .bar.crit > span { background: var(--crit); }
+    .temp { font-size: 1.4rem; font-weight: 700; }
+    .temp.warn { color: var(--warn); } .temp.crit { color: var(--crit); }
+    .sub { font-size: 0.8rem; color: var(--muted); margin-top: 0.2rem; }
+    .cam-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; }
+    .cam-card { background: #141c28; border-radius: 8px; padding: 0.75rem; font-size: 0.85rem; }
+    .cam-card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
+    .dot.online { background: var(--ok); } .dot.offline { background: var(--crit); } .dot.unknown { background: var(--muted); }
+    footer { padding: 0 1.5rem 1.5rem; color: var(--muted); font-size: 0.85rem; }
+    code { font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Data Acquisition</h1>
+    <span id="health-badge" class="badge pass">시스템 OK</span>
+  </header>
+  <main>
+    <div class="grid">
+      <section class="panel">
+        <h2>시스템 리소스</h2>
+        <div class="metric"><label><span>CPU</span><span id="cpu-val">—</span></label><div class="bar" id="cpu-bar"><span></span></div></div>
+        <div class="metric"><label><span>RAM</span><span id="ram-val">—</span></label><div class="bar" id="ram-bar"><span></span></div></div>
+        <div class="metric"><label><span>GPU</span><span id="gpu-val">—</span></label><div class="bar" id="gpu-bar"><span></span></div></div>
+        <div class="metric"><label><span>NVENC</span><span id="enc-val">—</span></label><div class="bar" id="enc-bar"><span></span></div></div>
+        <div class="metric"><label><span>NVDEC</span><span id="dec-val">—</span></label><div class="bar" id="dec-bar"><span></span></div></div>
+        <div class="metric"><label><span>VRAM</span><span id="vram-val">—</span></label><div class="bar" id="vram-bar"><span></span></div></div>
+        <div class="metric"><label><span>GPU 온도</span></label><div class="temp" id="gpu-temp">—</div></div>
+        <div class="metric" id="gpu-power-row" style="display:none"><label><span>GPU 전력</span><span id="gpu-power">—</span></label></div>
+        <div class="metric"><label><span>프로세스 RSS</span><span id="rss-val">—</span></div>
+        <div class="metric"><label><span>디스크 I/O</span><span id="diskio-val">—</span></label></div>
+        <div class="metric">
+          <label><span>Storage</span><span id="storage-val">—</span></label>
+          <div class="bar" id="storage-bar"><span></span></div>
+          <div class="sub" id="storage-path">—</div>
+          <div class="sub" id="storage-active">—</div>
+        </div>
+        <div class="metric"><label><span>Pre-buffer RAM</span><span id="prebuf-val">—</span></label></div>
+      </section>
+      <section class="panel">
+        <h2>카메라</h2>
+        <div class="cam-grid" id="cam-grid"></div>
+      </section>
+    </div>
+    <section class="panel">
+      <h2>네트워크 / TimeSync</h2>
+      <div id="net-list" class="sub">—</div>
+      <div id="timesync" class="sub" style="margin-top:0.5rem">—</div>
+    </section>
+  </main>
+  <footer>
+    Recording: <strong id="recording-state">idle</strong>
+    · <code>/api/ws/dashboard</code><span id="updated"></span>
+  </footer>
+  <script>
+    const THRESH = { cpu: 85, ram: 85, gpu: 90, tempWarn: 80, tempCrit: 90, storage: 90 };
+
+    function setBar(id, pct, warnAt) {
+      const wrap = document.getElementById(id);
+      if (!wrap) return;
+      const span = wrap.querySelector("span");
+      const v = pct == null ? 0 : Math.min(100, pct);
+      span.style.width = v + "%";
+      wrap.classList.remove("warn", "crit");
+      if (pct != null && pct >= warnAt) wrap.classList.add("warn");
+    }
+    function fmtGb(b) { return b == null ? "—" : (b / (1024**3)).toFixed(1) + " GB"; }
+    function fmtMb(b) { return b == null ? "—" : (b / (1024**2)).toFixed(0) + " MB"; }
+    function fmtRate(b) { return b == null ? "—" : (b / (1024**2)).toFixed(1) + " MB/s"; }
+
+    function renderCameras(cameras) {
+      const el = document.getElementById("cam-grid");
+      if (!cameras || !cameras.length) {
+        el.innerHTML = '<p class="sub">파이프라인 미연결 — 설정된 카메라 슬롯만 표시됩니다.</p>';
+        return;
+      }
+      el.innerHTML = cameras.map(c => {
+        const conn = c.connection || "unknown";
+        const fps = c.fps_live != null ? c.fps_live.toFixed(1) + " fps" : "— fps";
+        return `<div class="cam-card">
+          <h3><span class="dot ${conn}"></span>Cam ${c.camera_index}</h3>
+          <div>${c.ip}</div>
+          <div>${fps} · person ${c.person_count ?? 0}</div>
+          <div class="sub">drop ${c.frame_drops} · inc ${c.incomplete_frames}</div>
+        </div>`;
+      }).join("");
+    }
+
+    function applyPayload(data) {
+      const sys = data.system || {};
+      const cpu = sys.cpu || {}, mem = sys.memory || {}, gpu = sys.gpu || null;
+      document.getElementById("cpu-val").textContent = cpu.percent != null ? cpu.percent.toFixed(1) + "%" : "—";
+      setBar("cpu-bar", cpu.percent, THRESH.cpu);
+      document.getElementById("ram-val").textContent = mem.percent != null
+        ? mem.percent.toFixed(1) + "% (" + fmtGb(mem.used_bytes) + " / " + fmtGb(mem.total_bytes) + ")" : "—";
+      setBar("ram-bar", mem.percent, THRESH.ram);
+      if (gpu) {
+        document.getElementById("gpu-val").textContent = gpu.utilization_percent != null ? gpu.utilization_percent.toFixed(0) + "%" : "—";
+        setBar("gpu-bar", gpu.utilization_percent, THRESH.gpu);
+        document.getElementById("enc-val").textContent = gpu.encoder_percent != null ? gpu.encoder_percent.toFixed(0) + "%" : "—";
+        setBar("enc-bar", gpu.encoder_percent, THRESH.gpu);
+        document.getElementById("dec-val").textContent = gpu.decoder_percent != null ? gpu.decoder_percent.toFixed(0) + "%" : "—";
+        setBar("dec-bar", gpu.decoder_percent, THRESH.gpu);
+        const vramUsed = gpu.memory_used_mb != null ? gpu.memory_used_mb * 1024 * 1024 : null;
+        const vramTotal = gpu.memory_total_mb != null ? gpu.memory_total_mb * 1024 * 1024 : null;
+        const vramPct = vramUsed != null && vramTotal ? (vramUsed / vramTotal) * 100 : null;
+        document.getElementById("vram-val").textContent = vramPct != null
+          ? vramPct.toFixed(1) + "% (" + fmtGb(vramUsed) + " / " + fmtGb(vramTotal) + ")" : "—";
+        setBar("vram-bar", vramPct, 90);
+        const tempEl = document.getElementById("gpu-temp");
+        tempEl.textContent = gpu.temperature_c != null ? gpu.temperature_c + "°C" : "—";
+        tempEl.className = "temp" + (gpu.temperature_c >= THRESH.tempCrit ? " crit" : gpu.temperature_c >= THRESH.tempWarn ? " warn" : "");
+        if (gpu.power_w != null) {
+          document.getElementById("gpu-power-row").style.display = "";
+          document.getElementById("gpu-power").textContent = gpu.power_w.toFixed(0) + " W";
+        }
+      }
+      const proc = sys.process || {};
+      document.getElementById("rss-val").textContent = fmtMb(proc.rss_bytes);
+      const dio = sys.disk_io || {};
+      document.getElementById("diskio-val").textContent =
+        "R " + fmtRate(dio.read_bytes_per_sec) + " · W " + fmtRate(dio.write_bytes_per_sec);
+      const pb = data.prebuffer || {};
+      document.getElementById("prebuf-val").textContent =
+        fmtGb(pb.bytes_total) + (pb.source === "estimated" ? " (est.)" : "");
+
+      renderCameras(data.cameras);
+      const nets = sys.network || [];
+      document.getElementById("net-list").textContent = nets.length
+        ? nets.map(n => n.name + ": ↓" + fmtRate(n.bytes_recv_per_sec) + " ↑" + fmtRate(n.bytes_sent_per_sec)
+          + (n.errin ? " err " + n.errin : "")).join(" · ")
+        : "NIC 미설정 (CAMERA*_INTERFACE)";
+      const ts = data.timesync || {};
+      document.getElementById("timesync").textContent = ts.available
+        ? `skew live ${ts.live_max_skew_us ?? "—"} µs / tol ${ts.cross_camera_skew_tolerance_ms} ms`
+          + (ts.skew_exceeded ? " ⚠ exceeded" : "")
+        : "TimeSync: 세션 미연결";
+
+      const stg = sys.storage || data.storage || {};
+      const warnAt = stg.warn_percent != null ? stg.warn_percent : THRESH.storage;
+      document.getElementById("storage-val").textContent = !stg.accessible ? "접근 불가"
+        : stg.percent != null ? stg.percent.toFixed(1) + "% (" + fmtGb(stg.free_bytes) + " free)" : "—";
+      setBar("storage-bar", stg.percent, warnAt);
+      document.getElementById("storage-path").textContent = "STORAGE_PATH: " + (stg.path || "—");
+      const active = stg.active_path
+        ? "녹화 경로: " + stg.active_path + (stg.active_is_fallback ? " (fallback)" : " (primary)")
+        : "";
+      document.getElementById("storage-active").textContent = active + (stg.primary_reject_reason ? " · primary reject: " + stg.primary_reject_reason : "");
+
+      const rec = data.recording || {};
+      document.getElementById("recording-state").textContent = rec.state || "idle";
+
+      const health = data.health || { status: data.status, warnings: data.warnings || [] };
+      const st = (health.status || "PASS").toLowerCase();
+      const badge = document.getElementById("health-badge");
+      badge.className = "badge " + st;
+      badge.textContent = { pass: "시스템 OK", degraded: "주의", fail: "위험" }[st] || health.status;
+      document.getElementById("updated").textContent = " · " + (data.collected_at || "");
+    }
+
+    function connect() {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(proto + "//" + location.host + "/api/ws/dashboard");
+      ws.onmessage = (ev) => { try { applyPayload(JSON.parse(ev.data)); } catch (_) {} };
+      ws.onclose = () => setTimeout(connect, 2000);
+    }
+    connect();
+  </script>
+</body>
+</html>

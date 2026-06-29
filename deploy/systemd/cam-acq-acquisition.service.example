@@ -1,0 +1,21 @@
+# Template for the main acquisition daemon (enable after Phase 4.3 unified entry exists).
+# Copy to /etc/systemd/system/cam-acq-acquisition.service and set ExecStart.
+#
+# [Unit]
+# Description=cam_acq acquisition + detection + recording
+# After=network-online.target cam-acq-monitoring.service
+# Wants=network-online.target
+#
+# [Service]
+# Type=simple
+# User=cam-acq
+# Group=cam-acq
+# SupplementaryGroups=video render
+# EnvironmentFile=-/etc/cam-acq/cam-acq.env
+# WorkingDirectory=/home/besolt/works/cam_acq
+# ExecStart=/home/besolt/works/cam_acq/deploy/systemd/cam-acq-run.sh cam-acq-daemon
+# Restart=on-failure
+# RestartSec=10
+#
+# [Install]
+# WantedBy=multi-user.target

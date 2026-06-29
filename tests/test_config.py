@@ -16,6 +16,8 @@ def test_load_settings_from_example():
     assert all(c.ip for c in s.cameras)
     assert s.resize_width > 0
     assert s.detection_input_size > 0
+    assert s.monitoring_web_port > 0
+    assert s.system_metrics_poll_sec > 0
 
 
 def test_min_frames_expected():

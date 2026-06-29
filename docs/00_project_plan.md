@@ -195,16 +195,17 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 ### Phase 5 — Monitoring
 
 
-| ID  | 작업 |
-| --- | --- |
-| 5.1 | Data Collector (수신 FPS, detection, storage, 카메라 연결) |
-| 5.2 | **Host metrics** — CPU, RAM, GPU 사용률·VRAM, GPU 온도 (`psutil` + `pynvml`) |
-| 5.3 | Live Dashboard UI — **시스템 리소스 패널** + 카메라 그리드 (최대 4ch) |
-| 5.4 | 수동 녹화 트리거 UI |
-| 5.5 | REST `/api/health`, `/api/system/metrics` |
-| 5.6 | WebSocket `/api/ws/dashboard` (메트릭·상태 push) |
+| ID  | 작업 | 코드 | 검증 |
+| --- | --- | --- | --- |
+| 5.1 | Data Collector (FPS, detection, storage, 연결, pre-buffer, timesync) | ✅ `DashboardCollector` + `PipelineHooks` | hooks 연동 시 |
+| 5.2 | Host metrics — CPU, RAM, GPU, NVENC/NVDEC, VRAM, 온도, RSS, disk I/O, NIC | ✅ `host_metrics.py` | `cam-acq-monitoring` |
+| 5.3 | Dashboard UI — 시스템 패널 + 카메라 카드 + storage footer | ✅ `static/index.html` | WebSocket |
+| 5.4 | 수동 녹화 트리거 UI | **추후** | `POST /api/recording/trigger` |
+| 5.5 | REST `/api/health`, `/api/system/metrics`, `/api/cameras/{id}/stats` | ✅ | curl |
+| 5.6 | WebSocket `/api/ws/dashboard` | ✅ | |
+| 5.7 | 썸네일 스트림 (MJPEG/WS) | **추후** | `02_streaming_design.md` |
 
-상세 UI·API·임계치: `10_monitoring_design.md`
+상세: `10_monitoring_design.md`
 
 
 ---

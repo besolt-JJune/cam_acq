@@ -1,0 +1,20 @@
+[Unit]
+Description=cam_acq monitoring dashboard (Phase 5)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cam-acq
+Group=cam-acq
+SupplementaryGroups=video render
+EnvironmentFile=-/etc/cam-acq/cam-acq.env
+WorkingDirectory=/home/besolt/works/cam_acq
+ExecStart=/home/besolt/works/cam_acq/deploy/systemd/cam-acq-run.sh cam-acq-monitoring
+Restart=on-failure
+RestartSec=5
+# GPU metrics (nvidia-ml-py) and mergerfs storage
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

@@ -66,6 +66,13 @@ class GrabStats:
     def timestamp_monotonic(self) -> bool:
         return self.timestamp_regressions == 0
 
+    @property
+    def fps_live(self) -> float | None:
+        """Latest 1s rolling FPS; None before first window."""
+        if not self._fps_window:
+            return None
+        return self._fps_window[-1]
+
     def finalize_fps(self, elapsed_sec: float) -> None:
         if elapsed_sec > 0:
             self.fps_avg = self.frames_received / elapsed_sec
