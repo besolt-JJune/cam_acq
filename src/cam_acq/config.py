@@ -62,6 +62,10 @@ class Settings:
     camera_height: int
     timestamp_reset_on_session: bool
     cross_camera_skew_tolerance_ms: int
+    gige_recovery_retry_sec: float
+    gige_recovery_max_attempts: int
+    gige_feature_backup_dir: Path
+    socket_buffer_min_bytes: int
     resize_width: int
     resize_height: int
     detection_model_path: Path
@@ -126,6 +130,12 @@ def load_settings(env_file: Path | None = None) -> Settings:
         camera_height=_env_int("CAMERA_HEIGHT", 0),
         timestamp_reset_on_session=_env_bool("TIMESTAMP_RESET_ON_SESSION", True),
         cross_camera_skew_tolerance_ms=_env_int("CROSS_CAMERA_SKEW_TOLERANCE_MS", 50),
+        gige_recovery_retry_sec=_env_float("GIGE_RECOVERY_RETRY_SEC", 2.0),
+        gige_recovery_max_attempts=_env_int("GIGE_RECOVERY_MAX_ATTEMPTS", 5),
+        gige_feature_backup_dir=Path(
+            os.getenv("GIGE_FEATURE_BACKUP_DIR", str(hc_dir / "feature_backup"))
+        ),
+        socket_buffer_min_bytes=_env_int("SOCKET_BUFFER_MIN_BYTES", 10_485_760),
         resize_width=_env_int("RESIZE_WIDTH", 960),
         resize_height=_env_int("RESIZE_HEIGHT", 540),
         detection_model_path=Path(

@@ -39,6 +39,8 @@ uv run python -m cam_acq.tools.grab_healthcheck \
 | `--output` | `.../report.json` | 결과 JSON 경로 |
 | `--save-sample` | (없음) | 채널별 샘플 이미지 디렉터리 |
 | `--log` | LOG_PATH | 텍스트 로그 |
+| `--no-timestamp-reset` | (없음) | 세션 시작 `TimestampReset` 생략 |
+| `--recovery` | (없음) | GigE offline callback + IP 재연결 |
 | `--min-fps` | 22.0 | PASS 최소 평균 FPS |
 
 ### 3.2 종료 코드
@@ -65,7 +67,16 @@ uv run python -m cam_acq.tools.timestamp_test --reset --output ./healthcheck/tim
 
 종료 코드: `ptp_test`와 동일 (0=성공, 1=오픈/리셋 실패, 2=설정 오류).
 
-## 5. PASS / FAIL 기준
+## 5. `socket_buffer_check` (GigE 버퍼)
+
+```bash
+uv run python -m cam_acq.tools.socket_buffer_check --output ./healthcheck/socket_buffer.json
+```
+
+`/proc/sys/net/core/rmem_max`, `wmem_max`가 `SOCKET_BUFFER_MIN_BYTES`(기본 10MB) 이상이면 PASS.  
+FAIL 시: `sudo sdk/Galaxy_camera/c/SetSocketBufferSize.sh 20971520`
+
+## 6. PASS / FAIL 기준
 
 | 항목 | FAIL 조건 |
 |------|-----------|
@@ -75,7 +86,7 @@ uv run python -m cam_acq.tools.timestamp_test --reset --output ./healthcheck/tim
 | `frames_received` | < `duration × 23 × 0.95` |
 | 카메라 오픈 | 1대라도 실패 |
 
-## 6. 리포트 형식 (`report.json`)
+## 7. 리포트 형식 (`report.json`)
 
 ```json
 {
@@ -111,6 +122,8 @@ uv run python -m cam_acq.tools.timestamp_test --reset --output ./healthcheck/tim
 }
 ```
 
+`time_sync` 블록(Phase 2): 세션 시작 `TimestampReset` + `host_t0_wall`, 채널별 `camera_ts0`. skew가 `CROSS_CAMERA_SKEW_TOLERANCE_MS` 초과 시 `time_sync_warning` 추가.
+
 ### 샘플 이미지
 
 `--save-sample` 사용 시 채널별 마지막 프레임 JPEG 저장.  
@@ -120,7 +133,7 @@ Bayer → SDK `convert("RGB")` 후 저장 (육안 확인용).
 scp user@cam-server:/path/to/cam_acq/samples/cam0_last.jpg ./
 ```
 
-## 7. 개발자 워크플로 (SSH)
+## 8. 개발자 워크플로 (SSH)
 
 ### 6.1 기본 확인 (2대 test env)
 
@@ -133,7 +146,8 @@ cat .env | grep -E 'CAMERA|NUM_CAMERAS'
 uv run python -m cam_acq.tools.grab_healthcheck --duration 60
 
 echo "exit=$?"
-jq '.status, .cameras[] | {camera_index, fps_avg, frame_drops}' \
+jq '.status'
+jq '.cameras[] | {camera_index, fps_avg, frame_drops}' \
   /var/log/cam_acq/healthcheck/report.json
 ```
 
@@ -156,7 +170,7 @@ scp user@cam-server:/var/log/cam_acq/healthcheck/report.json ./
 scp user@cam-server:/path/to/cam_acq/samples/*.jpg ./
 ```
 
-## 8. 로그
+## 9. 로그
 
 | 파일 | 내용 |
 |------|------|
@@ -164,7 +178,7 @@ scp user@cam-server:/path/to/cam_acq/samples/*.jpg ./
 | `healthcheck/grab_YYYYMMDD.log` | 텍스트 로그 |
 | `LOG_PATH/YYYY-MM-DD.log` | 시스템 통합 로그 |
 
-## 9. Phase별 사용
+## 10. Phase별 사용
 
 | Phase | 명령 | 목적 |
 |-------|------|------|
@@ -172,7 +186,7 @@ scp user@cam-server:/path/to/cam_acq/samples/*.jpg ./
 | 1 | `timestamp_test --reset` | 세션 timestamp 앵커 확인 |
 | 1 | `--save-sample` | 육안 화질 확인 |
 | 2 | `--duration 3600` | 1시간 soak |
-| 2 | `NUM_CAMERAS=3` | 운영 구성 검증 |
+| 2 | `NUM_CAMERAS=3` | **추후** — `11_field_pending_work.md` §5 |
 | 5+ | `GET /api/health` | Web 카메라·시스템 요약 |
 | 5+ | `GET /api/system/metrics` | CPU, RAM, GPU, 온도 |
 
@@ -185,7 +199,7 @@ curl -s localhost:8080/api/system/metrics | jq '.cpu,.memory,.gpu'
 
 Dashboard UI (시스템 패널 + 카메라 그리드): `10_monitoring_design.md`
 
-## 10. 트러블슈팅
+## 11. 트러블슈팅
 
 | 증상 | 확인 |
 |------|------|
@@ -197,9 +211,10 @@ Dashboard UI (시스템 패널 + 카메라 그리드): `10_monitoring_design.md`
 | exit=2 | `LD_LIBRARY_PATH`, gxipy, IP 오타 |
 | sample 색 이상 | Bayer `PixelColorFilter` / demosaic 설정 |
 
-## 11. 관련 문서
+## 12. 관련 문서
 
 - `00_project_plan.md` — Phase 1
 - `10_monitoring_design.md` — Dashboard, host metrics
+- `11_field_pending_work.md` — 현장 대기 (3대, recovery, 1h soak)
 - `01_sdk_feasibility.md` — Demosaic
 - `04_install_guide.md` — Socket buffer

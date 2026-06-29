@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from cam_acq.camera.grab import GrabStats, min_frames_expected, run_multi_grab
+from cam_acq.camera.timesync import SessionTimeSync, TimeSyncManager
 from cam_acq.config import NOMINAL_FPS, ensure_dir, load_settings, setup_galaxy_lib_path
 from cam_acq.logging_setup import setup_logging
 
@@ -64,6 +65,8 @@ def build_report(
     min_fps: float,
     num_configured: int,
     sample_dir: Path | None,
+    time_sync: SessionTimeSync | None = None,
+    include_recovery: bool = False,
 ) -> dict:
     """Build healthcheck JSON document."""
     cameras_out = []
@@ -91,13 +94,25 @@ def build_report(
                 "sample_image": sample_path,
                 "pass": ok,
                 "fail_reasons": reasons,
+                **(
+                    {
+                        "recovery": {
+                            "offline_events": st.recovery.offline_events,
+                            "reconnect_success": st.recovery.reconnect_success,
+                            "reconnect_failed": st.recovery.reconnect_failed,
+                            "last_reconnect_error": st.recovery.last_reconnect_error,
+                        }
+                    }
+                    if include_recovery
+                    else {}
+                ),
             }
         )
 
     if len(stats_list) < num_configured:
         all_ok = False
 
-    return {
+    doc = {
         "schema_version": "1.0",
         "status": "PASS" if all_ok else "FAIL",
         "duration_sec": duration_sec,
@@ -115,6 +130,15 @@ def build_report(
         if all_ok
         else "One or more cameras failed criteria.",
     }
+    if time_sync is not None:
+        doc["time_sync"] = time_sync.to_dict()
+        skew = time_sync.max_cross_camera_skew_us
+        tol_us = time_sync.cross_camera_skew_tolerance_ms * 1000
+        if skew is not None and skew > tol_us:
+            doc["time_sync_warning"] = (
+                f"max_cross_camera_skew_us {skew} > tolerance {tol_us}"
+            )
+    return doc
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -125,6 +149,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=None, help="JSON report path")
     parser.add_argument("--save-sample", type=Path, default=None, help="JPEG sample dir")
     parser.add_argument("--log", type=Path, default=None, help="LOG_PATH override")
+    parser.add_argument(
+        "--no-timestamp-reset",
+        action="store_true",
+        help="Skip TimestampReset at session start (default: reset per TIMESTAMP_RESET_ON_SESSION)",
+    )
+    parser.add_argument(
+        "--recovery",
+        action="store_true",
+        help="Enable GigE offline callback + IP reconnect during soak",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -148,6 +182,28 @@ def main(argv: list[str] | None = None) -> int:
     fallback_w = settings.camera_width or 3840
     fallback_h = settings.camera_height or 2160
 
+    timestamp_reset = settings.timestamp_reset_on_session and not args.no_timestamp_reset
+    time_sync = TimeSyncManager().begin_session(
+        settings.cameras,
+        timestamp_reset=timestamp_reset,
+        cross_camera_skew_tolerance_ms=settings.cross_camera_skew_tolerance_ms,
+    )
+    for a in time_sync.anchors:
+        if a.open_error or a.reset_error:
+            logger.warning(
+                "time_sync cam%s ip=%s open_error=%s reset_error=%s",
+                a.camera_index,
+                a.ip,
+                a.open_error,
+                a.reset_error,
+            )
+    if time_sync.max_cross_camera_skew_us is not None:
+        logger.info(
+            "time_sync skew_us=%s tolerance_ms=%s",
+            time_sync.max_cross_camera_skew_us,
+            settings.cross_camera_skew_tolerance_ms,
+        )
+
     started = datetime.now(timezone.utc)
     stats_list = run_multi_grab(
         settings.cameras,
@@ -155,6 +211,10 @@ def main(argv: list[str] | None = None) -> int:
         settings.pixel_format,
         fallback_w,
         fallback_h,
+        enable_recovery=args.recovery,
+        feature_backup_dir=ensure_dir(settings.gige_feature_backup_dir),
+        recovery_retry_sec=settings.gige_recovery_retry_sec,
+        recovery_max_attempts=settings.gige_recovery_max_attempts,
     )
 
     report = build_report(
@@ -163,6 +223,8 @@ def main(argv: list[str] | None = None) -> int:
         args.min_fps,
         settings.num_cameras,
         args.save_sample,
+        time_sync=time_sync,
+        include_recovery=args.recovery,
     )
     report["started_at"] = started.isoformat()
     report["ended_at"] = datetime.now(timezone.utc).isoformat()

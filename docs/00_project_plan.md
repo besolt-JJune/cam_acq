@@ -106,12 +106,12 @@
 
 | ID  | 작업                                                 |
 | --- | -------------------------------------------------- |
-| 2.1 | 3대 IP(0-based) 오픈, 4ch NIC                         |
-| 2.2 | TimeSyncManager (host clock + `TimestampReset` 세션 앵커) |
-| 2.3 | GigE offline recovery                              |
-| 2.4 | `SetSocketBufferSize.sh` 적용                        |
+| 2.1 | 3대 IP(0-based) 오픈, 4ch NIC                         | **대기** — `11_field_pending_work.md` §2.1 |
+| 2.2 | TimeSyncManager (host clock + `TimestampReset` 세션 앵커) | ✅ `grab_healthcheck` 연동 |
+| 2.3 | GigE offline recovery                              | ✅ callback fix — **현장 케이블 test** (`11_field_pending_work.md`) |
+| 2.4 | `SetSocketBufferSize.sh` 적용                        | ✅ `socket_buffer_check` PASS (원격) |
 | 2.5 | 2대 PoC 병목 시 C grab 모듈 도입                           |
-| 2.6 | 1시간 soak test (`grab_healthcheck --duration 3600`) |
+| 2.6 | 1시간 soak test (`grab_healthcheck --duration 3600`) | ✅ 2대 PASS (22.98fps, drop 0) — 3대 재검증 대기 |
 
 
 ---
@@ -121,12 +121,12 @@
 
 | ID  | 작업                                      |
 | --- | --------------------------------------- |
-| 3.1 | DeepStream multi-source 파이프라인 (**2ch**, 현재) | **진행** — `configs/deepstream/deepstream_app_yolo_file_2ch.txt` |
+| 3.1 | DeepStream multi-source 파이프라인 (**2ch**, live) | ✅ `cam-acq-yolo-live` |
 | 3.2 | YOLOv8m → ONNX → TensorRT engine build (`batch=NUM_CAMERAS`) | ✅ `yolov8m_person_b2_gpu0_fp16.engine` |
 | 3.3 | bbox 역변환 (resize → 원본 4K)               | ✅ `cam_acq.detection.bbox` + `tests/test_detection.py` |
-| 3.4 | overlay 테스트 영상 저장                       | **대기** — `deepstream_app_yolo_file_2ch_overlay.txt` |
+| 3.4 | overlay 테스트 영상 저장 (live)                  | ✅ `samples/deepstream_yolo_overlay_live_2ch.mp4` |
 | 3.5 | detection 이벤트 → Recording trigger       | ✅ `cam_acq.detection.events.RecordingTrigger` |
-| 3.x | **3ch 전환** (NUM_CAMERAS=3)                 | **추후** |
+| 3.x | **3ch 전환** (NUM_CAMERAS=3)                 | **추후** — `11_field_pending_work.md` §5 |
 
 
 상세: `06_yolo_build_porting_guide.md`
@@ -246,6 +246,7 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 | `08_ssh_healthcheck_guide.md`    | SSH 원격 확인          |
 | `09_network_topology.md`         | 4-port NIC, netplan  |
 | `10_monitoring_design.md`        | Dashboard, CPU/GPU 메트릭 |
+| `11_field_pending_work.md`       | 현장 대기 작업 (3대, recovery, 1h soak) |
 | `architecture.md`                | 아키텍처 diagram       |
 
 
@@ -262,6 +263,6 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 | Bayer 직접 encode 시 색상 깨짐           | GPU debayer → NV12 → NVENC (필수) |
 | 3ch NVENC + YOLO VRAM             | Phase 4 코덱/프로파일링                |
 | PTP / 카메라 간 sync                  | PTP 미지원 → host clock + `TimestampReset` (`09_network_topology.md`) |
-| Test 2대 / 운영 3대                   | Phase 1~2는 2대, Phase 2 후 3대 전환  |
+| Test 2대 / 운영 3대                   | **현재 2대만 진행**; 3대는 `11_field_pending_work.md` §5 |
 
 

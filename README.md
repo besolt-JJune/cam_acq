@@ -3,7 +3,8 @@
 3대 4K GigE 카메라 취득 · Human Detection · 이벤트 녹화 · 모니터링.
 
 설계·설치: [docs/00_project_plan.md](docs/00_project_plan.md), [docs/04_install_guide.md](docs/04_install_guide.md)  
-Monitoring (CPU/GPU/온도 UI): [docs/10_monitoring_design.md](docs/10_monitoring_design.md)
+Monitoring (CPU/GPU/온도 UI): [docs/10_monitoring_design.md](docs/10_monitoring_design.md)  
+현장 대기 작업: [docs/11_field_pending_work.md](docs/11_field_pending_work.md)
 
 ## 빠른 시작
 
