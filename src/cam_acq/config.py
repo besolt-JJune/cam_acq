@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from cam_acq.camera.bayer import parse_bayer_format
 from cam_acq.camera.frame import DebayerBackend, parse_debayer_backend
 from dotenv import load_dotenv
 
@@ -59,6 +60,7 @@ class Settings:
     log_path: Path
     healthcheck_output_dir: Path
     pixel_format: str
+    bayer_format: str
     camera_width: int
     camera_height: int
     timestamp_reset_on_session: bool
@@ -143,6 +145,7 @@ def load_settings(env_file: Path | None = None) -> Settings:
         log_path=log_path,
         healthcheck_output_dir=hc_dir,
         pixel_format=os.getenv("PIXEL_FORMAT", "BayerRG8"),
+        bayer_format=parse_bayer_format(os.getenv("BAYER_FORMAT", "RGGB")),
         camera_width=_env_int("CAMERA_WIDTH", 0),
         camera_height=_env_int("CAMERA_HEIGHT", 0),
         timestamp_reset_on_session=_env_bool("TIMESTAMP_RESET_ON_SESSION", True),

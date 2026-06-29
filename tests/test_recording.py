@@ -72,6 +72,7 @@ def test_take_pending_window_frames():
             buffer_sec=2.0,
             split_interval_sec=60.0,
             pixel_format="BayerRG8",
+            bayer_format="RGGB",
             codec="H264",
             bitrate_bps=8_000_000,
             gpu_id=0,
@@ -106,6 +107,31 @@ def test_take_pending_window_frames():
         assert ctrl.take_pending_window_frames() is None
 
 
+def test_codec_profile_schedule():
+    from cam_acq.tools.codec_profile import codec_profile_schedule
+
+    assert codec_profile_schedule(5.0, 360.0) == (370.0, 5.0)
+
+
+def test_memory_profile_schedule():
+    from cam_acq.tools.memory_profile import memory_profile_schedule
+
+    assert memory_profile_schedule(5.0) == (40.0, 20.0)
+
+
+def test_peak_summary():
+    from cam_acq.tools.memory_profile import _peak_summary
+
+    peaks = _peak_summary(
+        [
+            {"ram_used_bytes": 1_000, "ram_percent": 40.0, "vram_used_mb": 500},
+            {"ram_used_bytes": 2_000, "ram_percent": 55.0, "vram_used_mb": 800},
+        ]
+    )
+    assert peaks["ram_used_bytes_peak"] == 2_000
+    assert peaks["vram_used_mb_peak"] == 800
+
+
 def test_encode_bayer_mp4_optional():
     """GPU encode smoke test; skipped unless GST_ENCODE_TEST=1."""
     import os
@@ -132,7 +158,7 @@ def test_encode_bayer_mp4_optional():
         encode_bayer_frames_to_mp4(
             frames,
             output_path=out,
-            pixel_format="BayerRG8",
+            bayer_format="RGGB",
             fps=23.0,
             codec="H264",
             bitrate_bps=4_000_000,
@@ -148,5 +174,8 @@ if __name__ == "__main__":
     test_basename_same_timestamp_across_cameras()
     test_storage_fifo_cleanup_api()
     test_take_pending_window_frames()
+    test_codec_profile_schedule()
+    test_memory_profile_schedule()
+    test_peak_summary()
     test_encode_bayer_mp4_optional()
     print("ok")

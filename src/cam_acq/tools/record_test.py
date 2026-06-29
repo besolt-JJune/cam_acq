@@ -65,6 +65,7 @@ def run_record_test(
         buffer_sec=settings.recording_buffer_sec,
         split_interval_sec=settings.recording_split_interval_sec,
         pixel_format=settings.pixel_format,
+        bayer_format=settings.bayer_format,
         codec=settings.encoding_codec,
         bitrate_bps=int(settings.encoding_bitrate_mbps * 1_000_000),
         gpu_id=settings.gpu_id,

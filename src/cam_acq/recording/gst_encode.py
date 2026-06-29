@@ -16,6 +16,7 @@ gi.require_version("Gst", "1.0")
 from gi.repository import Gst  # noqa: E402
 
 from cam_acq.recording.buffer import BufferedFrame
+from cam_acq.camera.bayer import resolve_gst_bayer_format
 
 
 def _ensure_gst_plugins() -> None:
@@ -26,22 +27,11 @@ def _ensure_gst_plugins() -> None:
             os.environ["GST_PLUGIN_PATH"] = f"{ds_plugins}:{prev}" if prev else ds_plugins
 
 
-def bayer_gst_format(pixel_format: str) -> str:
-    """Map PIXEL_FORMAT env to GStreamer Bayer format string."""
-    mapping = {
-        "BayerRG8": "rggb",
-        "BayerGR8": "grbg",
-        "BayerGB8": "gbrg",
-        "BayerBG8": "bggr",
-    }
-    return mapping.get(pixel_format, "rggb")
-
-
 def encode_bayer_frames_to_mp4(
     frames: list[BufferedFrame],
     *,
     output_path: Path,
-    pixel_format: str,
+    bayer_format: str,
     fps: float,
     codec: str,
     bitrate_bps: int,
@@ -54,7 +44,7 @@ def encode_bayer_frames_to_mp4(
     Gst.init(None)
 
     w, h = frames[0].width, frames[0].height
-    bayer_fmt = bayer_gst_format(pixel_format)
+    bayer_fmt = resolve_gst_bayer_format(bayer_format=bayer_format)
     frame_dur_ns = int(1_000_000_000 / fps)
     h265 = codec.upper() == "H265"
     # ponytail: nvv4l2h264enc segfaults on bayer→NVMM NV12 at 4K; use nvcuda*enc instead

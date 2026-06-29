@@ -126,7 +126,7 @@
 | 3.3 | bbox 역변환 (resize → 원본 4K) | ✅ `bbox.py`, `events.py` | ✅ unit |
 | 3.4 | overlay 테스트 영상 저장 (live) | ✅ MP4 finalize·stride 수정 | 추후 육안 |
 | 3.5 | nvinfer meta → `RecordingTrigger` | ✅ `gst_meta.py` probe | 추후 (pyds + 사람) |
-| 3.6 | GPU debayer (Phase 3 경로) | ✅ `DebayerBackend` 인터페이스 | 추후 (`gpu_phase3`) |
+| 3.6 | GPU debayer (Phase 3 경로) | ✅ `gpu_phase3` in yolo-live | `DEBAYER_MODE=gpu_phase3` |
 | 3.x | **3ch 전환** (`NUM_CAMERAS=3`) | **추후** | `11_field_pending_work.md` §5 |
 
 **Phase 3 코드 완료.** 남은 항목은 `11_field_pending_work.md` §6 현장 검증.
@@ -145,10 +145,10 @@
 | 4.3 | Human detection + auto trigger | ✅ `yolo-live` + `RecordingController` | **추후** (사람 walk-through E2E) |
 | 4.4 | post-buffer (`RECORDING_BUFFER_SEC`) | ✅ `RecordingController` | `cam-acq-record-test` |
 | 4.5 | Split recording | ✅ segment split in controller | `cam-acq-record-test` |
-| 4.6 | H.265 vs H.264 프로파일링 | **cam0 ✅** (2ch+YOLO 추후) | `cam-acq-codec-profile` |
+| 4.6 | H.265 vs H.264 프로파일링 | **cam0 ✅** → **H.264** | `cam-acq-codec-profile` |
 | 4.7 | 메타데이터 (`.json` + `.frames.jsonl`) | ✅ `recording/metadata.py` | `cam-acq-record-test` |
 | 4.8 | StorageManager (FIFO, fallback) | ✅ `recording/storage.py` | ✅ unit |
-| 4.9 | RAM/VRAM 실측 | **추후** | `record_test` 리포트 `ring_memory_bytes` |
+| 4.9 | RAM/VRAM 실측 | **2ch ✅** (3ch+YOLO 추후) | `cam-acq-memory-profile` |
 
 
 #### 4.1 코덱 결정 절차 (H.265 vs H.264)

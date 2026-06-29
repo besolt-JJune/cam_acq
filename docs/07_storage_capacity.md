@@ -90,28 +90,45 @@ max_days    = max_hours / 24
 
 동일 화질 기준 H.265가 용량 30~50% 절감. Phase 4에서 GPU 부하와 함께 최종 선택.
 
-### 4.1 Phase 4.6 cam0 실측 (2026-06-29, preliminary)
+### 4.1 Phase 4.6 cam0 실측 (2026-06-29)
 
-`cam-acq-codec-profile` — cam0 단독, **4024×3036**@23fps, `ENCODING_BITRATE_MBPS=12`, buffer 5s, 윈도우 ~10s (234 frames).
+`cam-acq-codec-profile` — cam0 단독, **4024×3036**@23fps, `ENCODING_BITRATE_MBPS=12`, `RECORDING_SPLIT_INTERVAL_SEC=360`, buffer 5s.
 
-| 코덱 | 파일 (MB) | effective Mbps | encode 처리량 | NVENC peak % |
-|------|-----------|----------------|---------------|--------------|
-| H.264 | 19.3 | 16.0 | 45 fps | 28 |
-| H.265 | 20.6 | 17.0 | 80 fps | 50 |
+스케줄: duration **370s** (= 5 + 360 + 5), trigger-at **5s**, split 경계마다 5s 청크 증분 인코딩.
 
-H.265/H.264 크기 비율 ≈ **1.07** (동일 target bitrate에서 H.265가 약 7% 큼 — 짧은 클립·VBR 특성).
+| 코덱 | 총 프레임 | 총 파일 | encode 처리량 | NVENC peak % |
+|------|-----------|---------|---------------|--------------|
+| H.264 | 8,493 | **734 MB** (seg00 724M + seg01 9.4M) | 41 fps | 28 |
+| H.265 | 8,493 | **780 MB** (seg00 770M + seg01 10M) | 72 fps | 50 |
 
-**미완:** 2ch 동시 + YOLO resize 부하, 운영 3ch. cam0-only 결과만으로 `ENCODING_CODEC` 최종 확정은 보류 (현재 `.env` 기본값 H.265 유지).
+H.265/H.264 크기 비율 ≈ **1.06** (동일 12 Mbps target, 360s+10s 윈도우).
+
+**결정 (2026-06-29):** 3ch+YOLO integration test 전 **H.264** (`ENCODING_CODEC=H264`). NVENC headroom 우선; H.265는 2~3ch 동시 부하 재검증 후.
+
+**미완:** 2ch 동시 + YOLO resize 부하, 운영 3ch integration test.
 
 ## 5. Pre-buffer RAM (Bayer, 녹화와 별도)
 
-```
-1 frame  ≈ 3840 × 2160 = 8.3 MB (Bayer8)
-1 camera = 23 fps × RECORDING_BUFFER_SEC
-3 cameras ≈ 8.3 MB × 230 × 3 = 5.7 GB  (10초 buffer)
-```
+### 5.1 Phase 4.9 실측 (2026-06-29, 2ch)
 
-32GB RAM에서 수용 가능. Phase 4 실측 필수.
+`cam-acq-memory-profile` — 4024×3036 BayerRG8, `RECORDING_BUFFER_SEC=5`, ring capacity 350 frames/ch.
+
+| 항목 | cam0 | cam1 | 합계 |
+|------|------|------|------|
+| ring (measured) | 4.0 GB | 4.0 GB | **8.0 GB** |
+| process RSS peak | — | — | **10.8 GB** |
+| system RAM peak | — | — | **13.8 GB** (46.9%) |
+| VRAM peak (encode) | — | — | **559 MB** |
+
+3ch 추정 (선형): ring ≈ **12.0 GB**, RSS ≈ **16 GB** — 32 GB RAM 내 수용 가능 (YOLO·OS 여유 별도).
+
+### 5.2 추정식 (참고)
+
+```
+1 frame  ≈ width × height  (Bayer8; 실측 4024×3036 ≈ 11.7 MB)
+capacity = ring_capacity_frames(fps, RECORDING_BUFFER_SEC)  # 3× buffer + margin
+per_cam  = capacity × width × height
+```
 
 ## 6. 이벤트 기반 실사용 (참고)
 

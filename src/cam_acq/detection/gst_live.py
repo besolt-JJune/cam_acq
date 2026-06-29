@@ -31,7 +31,7 @@ def _ensure_gst_plugins() -> None:
 
 
 class DeepStreamYoloLive:
-    """Feed RGB frames from Python into nvstreammux + nvinfer (batch = num_cameras)."""
+    """Feed RGB or Bayer frames into nvstreammux + nvinfer (batch = num_cameras)."""
 
     def __init__(
         self,
@@ -44,6 +44,10 @@ class DeepStreamYoloLive:
         nvinfer_config: Path,
         record_path: Path | None,
         detection_bridge: LiveDetectionBridge | None = None,
+        bayer_input: bool = False,
+        bayer_width: int = 0,
+        bayer_height: int = 0,
+        bayer_gst_format: str = "rggb",
     ) -> None:
         if num_cameras < 1:
             raise ValueError("num_cameras must be >= 1")
@@ -56,6 +60,10 @@ class DeepStreamYoloLive:
         self.fps = fps
         self.frame_duration_ns = int(1_000_000_000 / fps)
         self._pts = 0
+        self._bayer_input = bayer_input
+        self._bayer_width = bayer_width
+        self._bayer_height = bayer_height
+        self._bayer_gst_format = bayer_gst_format
         self._nvinfer_config = nvinfer_config.resolve()
         self._record_path = record_path.resolve() if record_path else None
         self._detection_bridge = detection_bridge
@@ -74,33 +82,71 @@ class DeepStreamYoloLive:
         self.pipeline.add(mux)
 
         caps_str = (
-            f"video/x-raw,format=RGBA,width={width},height={height},framerate={int(fps)}/1"
+            f"video/x-bayer,format={bayer_gst_format},width={bayer_width},height={bayer_height},"
+            f"framerate={int(fps)}/1"
+            if bayer_input
+            else f"video/x-raw,format=RGBA,width={width},height={height},framerate={int(fps)}/1"
         )
         for i in range(num_cameras):
             src = Gst.ElementFactory.make("appsrc", f"src{i}")
-            convert = Gst.ElementFactory.make("nvvideoconvert", f"conv{i}")
-            caps = Gst.ElementFactory.make("capsfilter", f"caps{i}")
-            if src is None or convert is None or caps is None:
-                raise RuntimeError("failed to create appsrc/nvvideoconvert/capsfilter")
+            if src is None:
+                raise RuntimeError("failed to create appsrc")
             src.set_property("is-live", True)
             src.set_property("format", Gst.Format.TIME)
             src.set_property("block", True)
-            src.set_property(
-                "caps",
-                Gst.Caps.from_string(caps_str),
-            )
-            caps.set_property("caps", Gst.Caps.from_string("video/x-raw(memory:NVMM),format=NV12"))
-            convert.set_property("gpu-id", gpu_id)
-            for el in (src, convert, caps):
-                self.pipeline.add(el)
-            if not src.link(convert):
-                raise RuntimeError(f"link failed src{i}->conv{i}")
-            if not convert.link(caps):
-                raise RuntimeError(f"link failed conv{i}->caps{i}")
+            src.set_property("caps", Gst.Caps.from_string(caps_str))
+
+            if bayer_input:
+                debayer = Gst.ElementFactory.make("bayer2rgb", f"debayer{i}")
+                scale = Gst.ElementFactory.make("videoscale", f"scale{i}")
+                resize_caps = Gst.ElementFactory.make("capsfilter", f"resize_caps{i}")
+                convert = Gst.ElementFactory.make("videoconvert", f"convert{i}")
+                nvconv = Gst.ElementFactory.make("nvvideoconvert", f"conv{i}")
+                caps = Gst.ElementFactory.make("capsfilter", f"caps{i}")
+                if not all((debayer, scale, resize_caps, convert, nvconv, caps)):
+                    raise RuntimeError("failed to create bayer debayer/scale/nvvideoconvert chain")
+                resize_caps.set_property(
+                    "caps",
+                    Gst.Caps.from_string(
+                        f"video/x-raw,width={width},height={height},framerate={int(fps)}/1"
+                    ),
+                )
+                caps.set_property("caps", Gst.Caps.from_string("video/x-raw(memory:NVMM),format=NV12"))
+                nvconv.set_property("gpu-id", gpu_id)
+                for el in (src, debayer, scale, resize_caps, convert, nvconv, caps):
+                    self.pipeline.add(el)
+                if not src.link(debayer):
+                    raise RuntimeError(f"link failed src{i}->debayer{i}")
+                if not debayer.link(scale):
+                    raise RuntimeError(f"link failed debayer{i}->scale{i}")
+                if not scale.link(resize_caps):
+                    raise RuntimeError(f"link failed scale{i}->resize_caps{i}")
+                if not resize_caps.link(convert):
+                    raise RuntimeError(f"link failed resize_caps{i}->convert{i}")
+                if not convert.link(nvconv):
+                    raise RuntimeError(f"link failed convert{i}->conv{i}")
+                if not nvconv.link(caps):
+                    raise RuntimeError(f"link failed conv{i}->caps{i}")
+                tail_el = caps
+            else:
+                convert = Gst.ElementFactory.make("nvvideoconvert", f"conv{i}")
+                caps = Gst.ElementFactory.make("capsfilter", f"caps{i}")
+                if convert is None or caps is None:
+                    raise RuntimeError("failed to create nvvideoconvert/capsfilter")
+                caps.set_property("caps", Gst.Caps.from_string("video/x-raw(memory:NVMM),format=NV12"))
+                convert.set_property("gpu-id", gpu_id)
+                for el in (src, convert, caps):
+                    self.pipeline.add(el)
+                if not src.link(convert):
+                    raise RuntimeError(f"link failed src{i}->conv{i}")
+                if not convert.link(caps):
+                    raise RuntimeError(f"link failed conv{i}->caps{i}")
+                tail_el = caps
+
             sink_pad = mux.request_pad_simple(f"sink_{i}")
             if sink_pad is None:
                 raise RuntimeError(f"mux sink_{i} pad missing")
-            src_pad = caps.get_static_pad("src")
+            src_pad = tail_el.get_static_pad("src")
             if src_pad.link(sink_pad) != Gst.PadLinkReturn.OK:
                 raise RuntimeError(f"link failed caps{i}->mux.sink_{i}")
             self.appsrcs.append(src)
@@ -207,6 +253,30 @@ class DeepStreamYoloLive:
             rgba[:, :, :3] = frame
             rgba[:, :, 3] = 255
             data = rgba.tobytes()
+            buf = Gst.Buffer.new_allocate(None, len(data), None)
+            buf.fill(0, data)
+            buf.pts = pts
+            buf.duration = dur
+            ret = appsrc.emit("push-buffer", buf)
+            if ret != Gst.FlowReturn.OK:
+                raise RuntimeError(f"appsrc push-buffer failed: {ret}")
+        self._pts += dur
+
+    def push_bayer_batch(self, frames: list) -> None:
+        """Push one full-resolution Bayer frame per camera (gpu_phase3 path)."""
+        if not self._bayer_input:
+            raise RuntimeError("pipeline was not built for Bayer input")
+        if len(frames) != self.num_cameras:
+            raise ValueError(f"expected {self.num_cameras} frames, got {len(frames)}")
+        pts = self._pts
+        dur = self.frame_duration_ns
+        for appsrc, frame in zip(self.appsrcs, frames):
+            if frame.width != self._bayer_width or frame.height != self._bayer_height:
+                raise ValueError(
+                    f"bayer size {frame.width}x{frame.height} != "
+                    f"{self._bayer_width}x{self._bayer_height}"
+                )
+            data = frame.data
             buf = Gst.Buffer.new_allocate(None, len(data), None)
             buf.fill(0, data)
             buf.pts = pts

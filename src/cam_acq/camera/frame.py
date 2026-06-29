@@ -2,11 +2,24 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
 import numpy as np
 from PIL import Image
+
+from cam_acq.camera.bayer import resolve_gst_bayer_format
+
+
+@dataclass(frozen=True)
+class BayerFrame:
+    """One copied Bayer payload for GPU debayer pipelines."""
+
+    data: bytes
+    width: int
+    height: int
+    gst_bayer_format: str
 
 
 class DebayerBackend(str, Enum):
@@ -35,6 +48,19 @@ def raw_image_to_rgb_resized(
     return np.ascontiguousarray(resized, dtype=np.uint8)
 
 
+def raw_image_to_bayer_frame(raw_image: Any, *, bayer_format: str) -> BayerFrame | None:
+    """Copy RawImage Bayer bytes; GStreamer pattern from BAYER_FORMAT."""
+    payload = raw_image.get_data()
+    if payload is None:
+        return None
+    return BayerFrame(
+        data=bytes(payload),
+        width=int(raw_image.get_width()),
+        height=int(raw_image.get_height()),
+        gst_bayer_format=resolve_gst_bayer_format(bayer_format=bayer_format),
+    )
+
+
 def raw_image_to_frame(
     raw_image: Any,
     width: int,
@@ -45,10 +71,15 @@ def raw_image_to_frame(
     """Dispatch Bayer conversion by backend (GPU paths deferred; see 11_field_pending_work.md §6)."""
     if backend == DebayerBackend.CPU_SDK:
         return raw_image_to_rgb_resized(raw_image, width, height)
-    raise NotImplementedError(
-        f"debayer backend {backend.value!r} is not implemented yet "
-        f"(gpu_phase3 → Phase 3 path, gpu_phase4 → Phase 4)"
-    )
+    if backend == DebayerBackend.GPU_PHASE3:
+        raise NotImplementedError(
+            "gpu_phase3 debayers inside DeepStreamYoloLive; use on_bayer_frame in grab loop"
+        )
+    if backend == DebayerBackend.GPU_PHASE4:
+        raise NotImplementedError(
+            "gpu_phase4 debayers in recording encode (gst_encode.bayer2rgb), not live RGB"
+        )
+    raise NotImplementedError(f"debayer backend {backend.value!r} is not implemented")
 
 
 def parse_debayer_backend(value: str) -> DebayerBackend:

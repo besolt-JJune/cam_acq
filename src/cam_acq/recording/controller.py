@@ -42,6 +42,7 @@ class RecordingController:
     buffer_sec: float
     split_interval_sec: float
     pixel_format: str
+    bayer_format: str
     codec: str
     bitrate_bps: int
     gpu_id: int
@@ -190,7 +191,7 @@ class RecordingController:
                 encode_bayer_frames_to_mp4(
                     frames,
                     output_path=paths["video"],
-                    pixel_format=self.pixel_format,
+                    bayer_format=self.bayer_format,
                     fps=self.fps,
                     codec=self.codec,
                     bitrate_bps=self.bitrate_bps,

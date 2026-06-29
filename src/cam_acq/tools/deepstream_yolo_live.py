@@ -16,7 +16,8 @@ from pathlib import Path
 from cam_acq.detection.gst_live import DeepStreamYoloLive
 from cam_acq.detection.gst_meta import LiveDetectionBridge
 
-from cam_acq.camera.frame import DebayerBackend
+from cam_acq.camera.frame import BayerFrame, DebayerBackend
+from cam_acq.camera.bayer import gst_format_from_bayer_format
 from cam_acq.camera.timesync import SessionTimeSync, TimeSyncManager
 from cam_acq.config import NOMINAL_FPS, load_settings, project_root, setup_galaxy_lib_path
 from cam_acq.detection.events import RecordingTrigger
@@ -37,16 +38,25 @@ class LiveFeedStats:
     frames_pushed: int = 0
     incomplete_frames: int = 0
     open_error: str | None = None
-    _latest: np.ndarray | None = field(default=None, repr=False)
+    _latest_rgb: np.ndarray | None = field(default=None, repr=False)
+    _latest_bayer: BayerFrame | None = field(default=None, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
-    def set_latest(self, frame: np.ndarray) -> None:
+    def set_latest_rgb(self, frame: np.ndarray) -> None:
         with self._lock:
-            self._latest = frame
+            self._latest_rgb = frame
 
-    def take_latest(self) -> np.ndarray | None:
+    def take_latest_rgb(self) -> np.ndarray | None:
         with self._lock:
-            return self._latest
+            return self._latest_rgb
+
+    def set_latest_bayer(self, frame: BayerFrame) -> None:
+        with self._lock:
+            self._latest_bayer = frame
+
+    def take_latest_bayer(self) -> BayerFrame | None:
+        with self._lock:
+            return self._latest_bayer
 
 
 def _grab_thread(
@@ -58,13 +68,19 @@ def _grab_thread(
     resize_w: int,
     resize_h: int,
     debayer_backend: DebayerBackend,
+    bayer_format: str,
     errors: list[str],
 ) -> None:
-    """One camera: Bayer ring (optional) + latest resized RGB for DeepStream."""
+    """One camera: Bayer ring (optional) + latest frame for DeepStream (RGB or Bayer)."""
+    use_gpu_debayer = debayer_backend == DebayerBackend.GPU_PHASE3
 
     def on_rgb(rgb: np.ndarray) -> None:
         stats.frames_grabbed += 1
-        stats.set_latest(rgb)
+        stats.set_latest_rgb(rgb)
+
+    def on_bayer(bayer: BayerFrame) -> None:
+        stats.frames_grabbed += 1
+        stats.set_latest_bayer(bayer)
 
     try:
         run_camera_grab_loop(
@@ -72,10 +88,12 @@ def _grab_thread(
             camera_index=stats.camera_index,
             stop_at=stop_at,
             controller=controller,
-            on_rgb_frame=on_rgb,
+            on_rgb_frame=None if use_gpu_debayer else on_rgb,
+            on_bayer_frame=on_bayer if use_gpu_debayer else None,
             resize_w=resize_w,
             resize_h=resize_h,
             debayer_backend=debayer_backend,
+            bayer_format=bayer_format,
             errors=errors,
         )
     except Exception as exc:
@@ -128,13 +146,17 @@ def run_live(
         print(f"Missing TensorRT engine: {engine} (run cam-acq-build-yolo)", file=sys.stderr)
         return 1
 
-    if settings.debayer_backend != DebayerBackend.CPU_SDK:
+    if settings.debayer_backend not in (
+        DebayerBackend.CPU_SDK,
+        DebayerBackend.GPU_PHASE3,
+    ):
         print(
-            f"DEBAYER_MODE={settings.debayer_backend.value} is not implemented yet "
-            f"(see docs/11_field_pending_work.md §6)",
+            f"DEBAYER_MODE={settings.debayer_backend.value} is not supported for yolo-live",
             file=sys.stderr,
         )
         return 1
+
+    use_gpu_debayer = settings.debayer_backend == DebayerBackend.GPU_PHASE3
 
     storage: StorageManager | None = None
     controller: RecordingController | None = None
@@ -154,6 +176,7 @@ def run_live(
             buffer_sec=settings.recording_buffer_sec,
             split_interval_sec=settings.recording_split_interval_sec,
             pixel_format=settings.pixel_format,
+            bayer_format=settings.bayer_format,
             codec=settings.encoding_codec,
             bitrate_bps=int(settings.encoding_bitrate_mbps * 1_000_000),
             gpu_id=settings.gpu_id,
@@ -194,6 +217,7 @@ def run_live(
                 "resize_w": settings.resize_width,
                 "resize_h": settings.resize_height,
                 "debayer_backend": settings.debayer_backend,
+                "bayer_format": settings.bayer_format,
                 "errors": grab_errors,
             },
             daemon=True,
@@ -217,6 +241,10 @@ def run_live(
         nvinfer_config=nvinfer,
         record_path=record_path,
         detection_bridge=detection_bridge,
+        bayer_input=use_gpu_debayer,
+        bayer_width=cam_w,
+        bayer_height=cam_h,
+        bayer_gst_format=gst_format_from_bayer_format(settings.bayer_format),
     )
     pipeline.start()
     started_wall = time.time()
@@ -224,28 +252,52 @@ def run_live(
     push_errors = 0
     try:
         while time.monotonic() < stop_at:
-            batch: list[np.ndarray] = []
-            for st in stats_list:
-                frame = st.take_latest()
-                if frame is None:
-                    break
-                batch.append(frame)
-            if len(batch) != settings.num_cameras:
-                time.sleep(0.001)
-                err = pipeline.poll_bus_errors()
-                if err:
-                    print(f"pipeline error: {err}", file=sys.stderr)
-                    return 1
-                continue
-            try:
-                pipeline.push_batch(batch)
+            if use_gpu_debayer:
+                bayer_batch: list[BayerFrame] = []
                 for st in stats_list:
-                    st.frames_pushed += 1
-            except RuntimeError as exc:
-                push_errors += 1
-                print(f"push error: {exc}", file=sys.stderr)
-                if push_errors > 5:
-                    return 1
+                    frame = st.take_latest_bayer()
+                    if frame is None:
+                        break
+                    bayer_batch.append(frame)
+                if len(bayer_batch) != settings.num_cameras:
+                    time.sleep(0.001)
+                    err = pipeline.poll_bus_errors()
+                    if err:
+                        print(f"pipeline error: {err}", file=sys.stderr)
+                        return 1
+                    continue
+                try:
+                    pipeline.push_bayer_batch(bayer_batch)
+                    for st in stats_list:
+                        st.frames_pushed += 1
+                except RuntimeError as exc:
+                    push_errors += 1
+                    print(f"push error: {exc}", file=sys.stderr)
+                    if push_errors > 5:
+                        return 1
+            else:
+                batch: list[np.ndarray] = []
+                for st in stats_list:
+                    frame = st.take_latest_rgb()
+                    if frame is None:
+                        break
+                    batch.append(frame)
+                if len(batch) != settings.num_cameras:
+                    time.sleep(0.001)
+                    err = pipeline.poll_bus_errors()
+                    if err:
+                        print(f"pipeline error: {err}", file=sys.stderr)
+                        return 1
+                    continue
+                try:
+                    pipeline.push_batch(batch)
+                    for st in stats_list:
+                        st.frames_pushed += 1
+                except RuntimeError as exc:
+                    push_errors += 1
+                    print(f"push error: {exc}", file=sys.stderr)
+                    if push_errors > 5:
+                        return 1
             err = pipeline.poll_bus_errors()
             if err:
                 print(f"pipeline error: {err}", file=sys.stderr)

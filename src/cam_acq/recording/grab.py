@@ -6,7 +6,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from cam_acq.camera.device import close_camera, open_camera_by_ip
-from cam_acq.camera.frame import DebayerBackend, raw_image_to_frame
+from cam_acq.camera.frame import DebayerBackend, BayerFrame, raw_image_to_bayer_frame, raw_image_to_frame
 from gxipy.gxidef import GxFrameStatusList, GxSwitchEntry
 
 if TYPE_CHECKING:
@@ -22,12 +22,14 @@ def run_camera_grab_loop(
     stop_at: float,
     controller: RecordingController | None = None,
     on_rgb_frame: Callable[[np.ndarray], None] | None = None,
+    on_bayer_frame: Callable[[BayerFrame], None] | None = None,
     resize_w: int = 0,
     resize_h: int = 0,
     debayer_backend: DebayerBackend = DebayerBackend.CPU_SDK,
+    bayer_format: str = "RGGB",
     errors: list[str] | None = None,
 ) -> None:
-    """Grab from one camera; push Bayer to ring and/or deliver resized RGB."""
+    """Grab from one camera; push Bayer to ring and/or deliver RGB or Bayer for detection."""
     import time
 
     cam = None
@@ -43,8 +45,17 @@ def run_camera_grab_loop(
                 continue
             if controller is not None:
                 controller.push_raw(camera_index, raw)
-            if on_rgb_frame is not None:
-                rgb = raw_image_to_frame(raw, resize_w, resize_h, backend=debayer_backend)
+            if on_bayer_frame is not None:
+                bayer = raw_image_to_bayer_frame(raw, bayer_format=bayer_format)
+                if bayer is not None:
+                    on_bayer_frame(bayer)
+            elif on_rgb_frame is not None:
+                rgb = raw_image_to_frame(
+                    raw,
+                    resize_w,
+                    resize_h,
+                    backend=debayer_backend,
+                )
                 if rgb is not None:
                     on_rgb_frame(rgb)
     except Exception as exc:

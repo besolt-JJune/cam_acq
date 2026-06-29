@@ -165,9 +165,19 @@ Phase 4 자동 녹화 E2E는 §6.7.
 
 30분~1시간 `cam-acq-yolo-live` — FPS·메모리·MP4 반복 확인 (사람 없어도 가능, trigger 검증은 §6.3).
 
-### 6.5 GPU debayer — Phase 3 경로 (3.6)
+### 6.5 GPU debayer — Phase 3 (`gpu_phase3`)
 
-`.env` `DEBAYER_MODE=gpu_phase3` — **미구현** (인터페이스만). 녹화용 GPU debayer는 Phase 4 (`gpu_phase4`).
+`.env` `DEBAYER_MODE=gpu_phase3` — YOLO live 경로: `bayer2rgb` → `videoscale` → `nvvideoconvert` (CPU SDK debayer 대체).
+
+Bayer 패턴: `.env` `BAYER_FORMAT` (RGGB|GRBG|GBRG|BGGR). 카메라 보고값은 `cam-acq-bayer-pattern-check`로 확인.
+
+```bash
+source venv.sh
+uv run cam-acq-bayer-pattern-check --camera-index 0 --output-dir ./healthcheck/bayer_pattern
+# cam0.raw + cam0_{RGGB,GRBG,GBRG,BGGR}.bmp — 색이 자연스러운 패턴을 BAYER_FORMAT에 설정
+```
+
+녹화 encode debayer: `gpu_phase4` = `gst_encode.bayer2rgb` (이미 적용).
 
 ### 6.6 Phase 4 수동 trigger 녹화 (4.2~4.8)
 
@@ -211,14 +221,25 @@ cam1 촬영 위치 부적합 → **cam0 단독**으로 동일 Bayer 윈도우를
 
 ```bash
 source venv.sh
-# buffer 5s → duration >= trigger_at + 2×5 (예: 28s / trigger 8s)
-uv run cam-acq-codec-profile --camera-index 0 --duration 28 --trigger-at 8 \
+# buffer 5s, split 360s → duration 370s, trigger-at 5s (defaults from .env)
+uv run cam-acq-codec-profile --camera-index 0 \
   --output ./healthcheck/codec_profile.json
 ```
 
 리포트: `encodes[]` — `file_bytes`, `encode_sec`, `effective_mbps`, `gpu_peak_util_pct`, `encoder_peak_util_pct`, `h265_vs_h264_size_ratio`.
 
 결과 반영: `.env` `ENCODING_CODEC`, `docs/07_storage_capacity.md` 표 갱신.
+
+### 6.9 Phase 4.9 RAM/VRAM 실측 (2ch)
+
+```bash
+source venv.sh
+uv run cam-acq-memory-profile --output ./healthcheck/memory_profile.json
+```
+
+기본: duration 40s (ring fill 20s + trigger/encode), 1s poll. 리포트 `ring_memory_bytes_total`, `peaks.*`.
+
+3ch·YOLO 동시는 integration test 때 재측정.
 
 ---
 
