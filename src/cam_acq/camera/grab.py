@@ -6,7 +6,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cam_acq.camera.device import close_camera, open_camera_by_ip
 from cam_acq.camera.recovery import (
@@ -20,6 +20,9 @@ from cam_acq.camera.recovery import (
     save_feature_backup,
 )
 from cam_acq.config import CameraEndpoint, NOMINAL_FPS
+
+if TYPE_CHECKING:
+    from cam_acq.camera.param_store import RuntimeParamStore
 from gxipy.gxidef import GxFrameStatusList, GxSwitchEntry
 
 
@@ -97,12 +100,15 @@ def grab_loop(
     pixel_format_label: str,
     fallback_w: int,
     fallback_h: int,
+    param_store: RuntimeParamStore | None = None,
 ) -> None:
     """Open camera by IP, grab until stop_at monotonic time; fill stats."""
     cam = None
     try:
         cam = open_camera_by_ip(endpoint.ip)
         _configure_continuous(cam)
+        if param_store is not None:
+            param_store.on_camera_open(cam, endpoint.index)
         w, h = _read_geometry(cam, fallback_w, fallback_h)
         stats.width = w
         stats.height = h
@@ -112,6 +118,8 @@ def grab_loop(
         window_start = time.monotonic()
         window_frames = 0
         while time.monotonic() < stop_at:
+            if param_store is not None:
+                param_store.apply_if_requested(cam, endpoint.index)
             raw = cam.data_stream[0].get_image(timeout=1000)
             if raw is None:
                 continue
@@ -143,6 +151,7 @@ def grab_loop_with_recovery(
     feature_backup_dir: Path,
     retry_interval_sec: float = 2.0,
     max_attempts: int = 5,
+    param_store: RuntimeParamStore | None = None,
 ) -> None:
     """Grab with offline callback; reconnect by IP and reload feature backup."""
     cam = None
@@ -152,6 +161,8 @@ def grab_loop_with_recovery(
         cam = open_camera_by_ip(endpoint.ip)
         _configure_continuous(cam)
         save_feature_backup(cam, backup)
+        if param_store is not None:
+            param_store.on_camera_open(cam, endpoint.index)
         w, h = _read_geometry(cam, fallback_w, fallback_h)
         stats.width = w
         stats.height = h
@@ -175,7 +186,11 @@ def grab_loop_with_recovery(
                 if cam is None:
                     stats.open_error = stats.recovery.last_reconnect_error
                     break
+                if param_store is not None:
+                    param_store.requeue(endpoint.index)
 
+            if param_store is not None:
+                param_store.apply_if_requested(cam, endpoint.index)
             raw = cam.data_stream[0].get_image(timeout=1000)
             if raw is None:
                 continue
@@ -206,6 +221,7 @@ def run_multi_grab(
     feature_backup_dir: Path | None = None,
     recovery_retry_sec: float = 2.0,
     recovery_max_attempts: int = 5,
+    param_store: RuntimeParamStore | None = None,
 ) -> list[GrabStats]:
     """Grab from all cameras in parallel threads for duration_sec."""
     stop_at = time.monotonic() + duration_sec
@@ -227,9 +243,18 @@ def run_multi_grab(
                 feature_backup_dir,  # type: ignore[arg-type]
                 retry_interval_sec=recovery_retry_sec,
                 max_attempts=recovery_max_attempts,
+                param_store=param_store,
             )
         else:
-            grab_loop(ep, stop_at, st, pixel_format, fallback_w, fallback_h)
+            grab_loop(
+                ep,
+                stop_at,
+                st,
+                pixel_format,
+                fallback_w,
+                fallback_h,
+                param_store=param_store,
+            )
 
     threads = [
         threading.Thread(target=_target, args=(ep, st), daemon=True)

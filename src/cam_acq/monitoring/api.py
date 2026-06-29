@@ -9,12 +9,28 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel, ConfigDict
 
+from cam_acq.camera.params import patch_to_param_dict
 from cam_acq.config import Settings
 from cam_acq.monitoring.collector import DashboardCollector
 
 logger = logging.getLogger(__name__)
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+class CameraParamsUpdate(BaseModel):
+    """Partial GenICam parameter update (PATCH body)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    exposure_time_us: float | None = None
+    exposure_auto: str | None = None
+    acquisition_frame_rate: float | None = None
+    gain: float | None = None
+    gain_auto: str | None = None
+    gamma_mode: str | None = None
+    gamma: float | None = None
 
 
 def create_app(settings: Settings, collector: DashboardCollector | None = None) -> FastAPI:
@@ -53,6 +69,40 @@ def create_app(settings: Settings, collector: DashboardCollector | None = None) 
         if stats is None:
             raise HTTPException(status_code=404, detail="camera_index not configured")
         return JSONResponse(stats)
+
+    @app.get("/api/cameras/{camera_index}/params")
+    async def camera_params_get(camera_index: int) -> JSONResponse:
+        """Current GenICam parameters (last applied by grab thread)."""
+        store = col.hooks.param_store
+        if store is None:
+            raise HTTPException(status_code=503, detail="parameter control not enabled")
+        if not store.is_configured(camera_index):
+            raise HTTPException(status_code=404, detail="camera_index not configured")
+        body = store.snapshot(camera_index)
+        if body is None:
+            raise HTTPException(status_code=404, detail="camera_index not configured")
+        return JSONResponse(body)
+
+    @app.patch("/api/cameras/{camera_index}/params")
+    async def camera_params_patch(
+        camera_index: int,
+        update: CameraParamsUpdate,
+    ) -> JSONResponse:
+        """Queue parameter apply on user request (grab thread applies once, not every frame)."""
+        store = col.hooks.param_store
+        if store is None:
+            raise HTTPException(status_code=503, detail="parameter control not enabled")
+        if not store.is_configured(camera_index):
+            raise HTTPException(status_code=404, detail="camera_index not configured")
+        changes = patch_to_param_dict(update.model_dump())
+        if not changes:
+            raise HTTPException(status_code=400, detail="no parameter fields in body")
+        try:
+            store.queue_update(camera_index, changes)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="camera_index not configured") from None
+        body = store.snapshot(camera_index)
+        return JSONResponse(body or {"camera_index": camera_index})
 
     @app.websocket("/api/ws/dashboard")
     async def ws_dashboard(websocket: WebSocket) -> None:

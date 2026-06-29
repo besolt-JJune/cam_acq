@@ -89,7 +89,52 @@ hooks.set_detection(detection_frame_event)
 | 카메라 그리드 | 채널별 FPS·person·drop (썸네일/bbox overlay 추후) |
 | NIC / TimeSync | `CAMERA*_INTERFACE` 트래픽·에러, live skew |
 
-**미구현 (Phase 5 잔여):** 수동 녹화 버튼 (`POST /api/recording/trigger`), MJPEG/WebSocket 썸네일
+**미구현 (Phase 5 잔여):** 수동 녹화 버튼 (`POST /api/recording/trigger`), MJPEG/WebSocket 썸네일, **카메라 파라미터 설정 UI** (§3.1)
+
+### 3.1 카메라 파라미터 설정 UI (Phase 5 — **미구현**, API만 준비)
+
+Dashboard 메인 화면과 **분리된 설정 창**(모달 또는 별도 패널). Phase 5에서 구현 예정.
+
+**진입**
+
+- Dashboard 헤더/툴바에 `Camera Settings` (또는 동등) 버튼 → 설정 창 오픈
+
+**설정 창 구성**
+
+| 영역 | 동작 |
+|------|------|
+| 카메라 선택 | `connection=online` 인 채널만 선택 가능; 오프라인은 비활성 + 사유 표시 |
+| 현재값 표시 | 선택 시 `GET /api/cameras/{id}/params` 로 폼 초기화 |
+| 편집 필드 | ExposureTime (µs), ExposureAuto, AcquisitionFrameRate, Gain, GainAuto, GammaMode, Gamma |
+| 적용 | 사용자가 **Apply** 클릭 시에만 `PATCH /api/cameras/{id}/params` 호출 (자동/주기 적용 없음) |
+| 피드백 | `apply_pending` / `last_apply_error` 표시; 성공 시 GET으로 재동기화 |
+
+**UX 원칙**
+
+- 파라미터는 **사용자 명시 요청(PATCH) 시에만** grab 스레드가 GenICam에 반영한다. 프레임마다 재적용하지 않는다 (취득 중 이미지 깨짐 방지).
+- 카메라 전환 시 미저장 편집은 확인 다이얼로그(선택).
+- enum 필드(ExposureAuto, GainAuto, GammaMode)는 기기 symbolic 목록을 API 응답 또는 고정 매핑으로 드롭다운.
+
+- **백엔드 전제**
+
+- grab 루프와 monitoring API가 **동일 프로세스** (`cam-acq-yolo-live --with-monitoring` 등). 단독 `cam-acq-monitoring`만으로는 PATCH 불가 (`503`).
+
+**별도 프로세스 검증 (Dashboard 전 테스트)**
+
+Galaxy SDK는 동일 카메라를 **두 프로세스가 동시에 open 할 수 없다**. grab가 `cam` 핸들을 잡는 동안 별도 gxipy 스크립트로 `set()` 하는 방식은 불가.
+
+대신 grab 프로세스의 REST API를 **다른 터미널/프로세스**에서 호출한다 (Dashboard와 동일 경로):
+
+```bash
+# 터미널 1 — grab + monitoring API
+cam-acq-yolo-live --with-monitoring --duration 3600
+
+# 터미널 2 — parameter client (HTTP only, 카메라 직접 open 안 함)
+cam-acq-params get --camera 0
+cam-acq-params patch --camera 0 --gain 8.0 --exposure-auto Off --wait
+```
+
+`cam-acq-params` = `GET/PATCH /api/cameras/{id}/params` 래퍼. `--wait`는 grab 스레드 반영·`last_apply_error` 확인용.
 
 ### 경고 임계치 (`.env`)
 
@@ -114,7 +159,31 @@ hooks.set_detection(detection_frame_event)
 GET  /api/health
 GET  /api/system/metrics
 GET  /api/cameras/{camera_index}/stats
+GET  /api/cameras/{camera_index}/params
+PATCH /api/cameras/{camera_index}/params
 WS   /api/ws/dashboard
+```
+
+`GET/PATCH .../params` — grab 루프와 동일 프로세스 + `RuntimeParamStore` 연결 시 (`cam-acq-yolo-live --with-monitoring` 등).
+
+- **GET** — 마지막으로 카메라에 반영된 값 (`apply_pending`, `last_apply_error` 포함).
+- **PATCH** — 사용자 요청 시에만 큐잉; grab 스레드가 **다음 루프에서 신호를 받았을 때 한 번** GenICam에 반영 (프레임마다 적용하지 않음). UI는 Apply 버튼 → PATCH.
+
+`GET /api/cameras/{id}/params` 응답 예:
+
+```json
+{
+  "camera_index": 0,
+  "exposure_time_us": 10000.0,
+  "exposure_auto": "Off",
+  "acquisition_frame_rate": 23.0,
+  "gain": 10.0,
+  "gain_auto": "Off",
+  "gamma_mode": "User",
+  "gamma": 1.0,
+  "apply_pending": false,
+  "last_apply_error": null
+}
 ```
 
 ### 추후

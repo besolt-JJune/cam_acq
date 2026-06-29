@@ -18,6 +18,7 @@ from cam_acq.detection.gst_meta import LiveDetectionBridge
 
 from cam_acq.camera.frame import BayerFrame, DebayerBackend
 from cam_acq.camera.bayer import gst_format_from_bayer_format
+from cam_acq.camera.param_store import RuntimeParamStore
 from cam_acq.camera.timesync import SessionTimeSync, TimeSyncManager
 from cam_acq.config import NOMINAL_FPS, load_settings, project_root, setup_galaxy_lib_path
 from cam_acq.detection.events import RecordingTrigger
@@ -69,6 +70,7 @@ def _grab_thread(
     resize_h: int,
     debayer_backend: DebayerBackend,
     bayer_format: str,
+    param_store: RuntimeParamStore | None,
     errors: list[str],
 ) -> None:
     """One camera: Bayer ring (optional) + latest frame for DeepStream (RGB or Bayer)."""
@@ -94,6 +96,7 @@ def _grab_thread(
             resize_h=resize_h,
             debayer_backend=debayer_backend,
             bayer_format=bayer_format,
+            param_store=param_store,
             errors=errors,
         )
     except Exception as exc:
@@ -131,6 +134,7 @@ def run_live(
     record_path: Path | None,
     output_json: Path | None,
     event_recording: bool,
+    with_monitoring: bool = False,
 ) -> int:
     """Grab from configured cameras, run YOLO, optionally NVENC on person trigger."""
     settings = load_settings(env_file)
@@ -204,6 +208,19 @@ def run_live(
         recording=controller,
     )
 
+    param_store: RuntimeParamStore | None = None
+    if with_monitoring:
+        from cam_acq.monitoring import DashboardCollector, PipelineHooks, start_monitoring_server
+
+        param_store = RuntimeParamStore(settings.camera_indices)
+        hooks = PipelineHooks(param_store=param_store)
+        if controller is not None:
+            hooks.bind_recording(controller, trigger=trigger)
+        if time_sync is not None:
+            hooks.bind_time_sync(time_sync)
+        collector = DashboardCollector(settings, hooks=hooks)
+        start_monitoring_server(settings, collector)
+
     stop_at = time.monotonic() + duration_sec
     grab_errors: list[str] = []
     threads = [
@@ -218,6 +235,7 @@ def run_live(
                 "resize_h": settings.resize_height,
                 "debayer_backend": settings.debayer_backend,
                 "bayer_format": settings.bayer_format,
+                "param_store": param_store,
                 "errors": grab_errors,
             },
             daemon=True,
@@ -397,6 +415,11 @@ def main() -> int:
         help="disable Phase 4 NVENC recording on person trigger",
     )
     parser.add_argument("--output", type=Path, default=None, help="JSON report path")
+    parser.add_argument(
+        "--with-monitoring",
+        action="store_true",
+        help="start REST API for runtime camera params (MONITORING_WEB_PORT)",
+    )
     args = parser.parse_args()
 
     setup_galaxy_lib_path()
@@ -407,6 +430,7 @@ def main() -> int:
         record_path=record,
         output_json=args.output,
         event_recording=not args.no_event_recording,
+        with_monitoring=args.with_monitoring,
     )
 
 

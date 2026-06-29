@@ -6,6 +6,8 @@ import os
 import sys
 from pathlib import Path
 
+import typing_extensions  # noqa: F401 — pin venv before dist-packages prepend (pydantic Sentinel)
+
 # ponytail: use distro PyGObject; uv venv often lacks gi (pycairo build)
 for _p in ("/usr/lib/python3/dist-packages", "/usr/lib/python3.12/dist-packages"):
     if Path(_p).is_dir() and _p not in sys.path:

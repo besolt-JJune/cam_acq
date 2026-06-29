@@ -13,6 +13,7 @@ dependencies = [
     "uvicorn[standard]>=0.32",
     "psutil>=6.0",
     "nvidia-ml-py>=12.0",
+    "typing_extensions>=4.12.0",
 ]
 
 [project.scripts]
@@ -27,6 +28,7 @@ cam-acq-codec-profile = "cam_acq.tools.codec_profile:main"
 cam-acq-bayer-pattern-check = "cam_acq.tools.bayer_pattern_check:main"
 cam-acq-memory-profile = "cam_acq.tools.memory_profile:main"
 cam-acq-monitoring = "cam_acq.tools.monitoring_server:main"
+cam-acq-params = "cam_acq.tools.params_client:main"
 
 [build-system]
 requires = ["setuptools>=61"]

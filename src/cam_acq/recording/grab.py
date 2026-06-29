@@ -12,6 +12,7 @@ from gxipy.gxidef import GxFrameStatusList, GxSwitchEntry
 if TYPE_CHECKING:
     import numpy as np
 
+    from cam_acq.camera.param_store import RuntimeParamStore
     from cam_acq.recording.controller import RecordingController
 
 
@@ -27,6 +28,7 @@ def run_camera_grab_loop(
     resize_h: int = 0,
     debayer_backend: DebayerBackend = DebayerBackend.CPU_SDK,
     bayer_format: str = "RGGB",
+    param_store: RuntimeParamStore | None = None,
     errors: list[str] | None = None,
 ) -> None:
     """Grab from one camera; push Bayer to ring and/or deliver RGB or Bayer for detection."""
@@ -36,8 +38,12 @@ def run_camera_grab_loop(
     try:
         cam = open_camera_by_ip(ip)
         cam.TriggerMode.set(GxSwitchEntry.OFF)
+        if param_store is not None:
+            param_store.on_camera_open(cam, camera_index)
         cam.stream_on()
         while time.monotonic() < stop_at:
+            if param_store is not None:
+                param_store.apply_if_requested(cam, camera_index)
             raw = cam.data_stream[0].get_image(timeout=1000)
             if raw is None:
                 continue

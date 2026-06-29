@@ -58,6 +58,7 @@
 | Detection  | YOLOv8m (고정확도), TensorRT engine 별도 build                |
 | Streaming  | Resize 썸네일만, 수신 FPS 유지, `UI_MAX_DISPLAY_FPS`로 표시 상한     |
 | Monitoring | 카메라 FPS·detection·storage + **CPU/RAM/GPU/온도** Dashboard (`10_monitoring_design.md`) |
+| 카메라 파라미터 | **런타임 PATCH** — ExposureTime/Auto, Gain/Auto, AcquisitionFrameRate, GammaMode/Gamma (`01_sdk_feasibility.md` §3.3, `--with-monitoring`) |
 | 메타데이터      | `.json` (session) + `.frames.jsonl` (프레임) 분리            |
 | DeepStream | **네이티브** (DS 9.0, Ubuntu 24.04 공식 지원)                   |
 
@@ -205,6 +206,7 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 | 5.5 | REST `/api/health`, `/api/system/metrics`, `/api/cameras/{id}/stats` | ✅ | curl |
 | 5.6 | WebSocket `/api/ws/dashboard` | ✅ | |
 | 5.7 | 썸네일 스트림 (MJPEG/WS) | **추후** | `02_streaming_design.md` |
+| 5.8 | 카메라 파라미터 설정 UI (별도 설정 창 + Apply → PATCH) | **추후** | REST `GET/PATCH .../params` ✅ (`10_monitoring_design.md` §3.1) |
 
 상세: `10_monitoring_design.md`
 

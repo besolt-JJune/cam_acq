@@ -14,6 +14,7 @@ from pathlib import Path
 from cam_acq.detection.gst_live import DeepStreamYoloLive  # noqa: F401
 
 from cam_acq.camera.timesync import TimeSyncManager
+from cam_acq.camera.param_store import RuntimeParamStore
 from cam_acq.config import NOMINAL_FPS, load_settings, setup_galaxy_lib_path
 from cam_acq.detection.events import RecordingTrigger
 from cam_acq.recording.controller import RecordingController
@@ -27,6 +28,7 @@ def _run_grab(
     camera_index: int,
     controller: RecordingController,
     stop_at: float,
+    param_store: RuntimeParamStore | None,
     errors: list[str],
 ) -> None:
     """Thread target: Bayer-only grab into recording ring."""
@@ -36,6 +38,7 @@ def _run_grab(
             camera_index=camera_index,
             stop_at=stop_at,
             controller=controller,
+            param_store=param_store,
             errors=errors,
         )
     except Exception:
@@ -48,6 +51,7 @@ def run_record_test(
     trigger_at_sec: float,
     env_file: Path | None,
     output_json: Path | None,
+    with_monitoring: bool = False,
 ) -> int:
     """Fill rings, fire manual trigger, encode after post-buffer."""
     settings = load_settings(env_file)
@@ -81,6 +85,17 @@ def run_record_test(
         timestamp_reset=settings.timestamp_reset_on_session,
     )
 
+    param_store: RuntimeParamStore | None = None
+    if with_monitoring:
+        from cam_acq.monitoring import DashboardCollector, PipelineHooks, start_monitoring_server
+
+        param_store = RuntimeParamStore(settings.camera_indices)
+        hooks = PipelineHooks(param_store=param_store)
+        hooks.bind_recording(controller, trigger=trigger)
+        hooks.bind_time_sync(time_sync)
+        collector = DashboardCollector(settings, hooks=hooks)
+        start_monitoring_server(settings, collector)
+
     stop_at = time.monotonic() + duration_sec
     trigger_at = time.monotonic() + trigger_at_sec
     errors: list[str] = []
@@ -92,6 +107,7 @@ def run_record_test(
                 "camera_index": cam.index,
                 "controller": controller,
                 "stop_at": stop_at,
+                "param_store": param_store,
                 "errors": errors,
             },
             daemon=True,
@@ -164,6 +180,11 @@ def main() -> int:
         help="manual trigger after N seconds",
     )
     parser.add_argument("--output", type=Path, default=Path("healthcheck/record_test.json"))
+    parser.add_argument(
+        "--with-monitoring",
+        action="store_true",
+        help="start REST API for runtime camera params (MONITORING_WEB_PORT)",
+    )
     args = parser.parse_args()
     if args.duration < args.trigger_at + 2:
         print("duration must allow pre+post buffer after trigger", file=sys.stderr)
@@ -173,6 +194,7 @@ def main() -> int:
         trigger_at_sec=args.trigger_at,
         env_file=args.env_file,
         output_json=args.output,
+        with_monitoring=args.with_monitoring,
     )
 
 
