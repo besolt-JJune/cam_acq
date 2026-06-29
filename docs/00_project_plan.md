@@ -121,11 +121,12 @@
 
 | ID  | 작업                                      |
 | --- | --------------------------------------- |
-| 3.1 | DeepStream 9.0 multi-source 파이프라인 (3ch) |
-| 3.2 | YOLOv8m → ONNX → TensorRT engine build  |
-| 3.3 | bbox 역변환 (resize → 원본 4K)               |
-| 3.4 | overlay 테스트 영상 저장                       |
-| 3.5 | detection 이벤트 → Recording trigger       |
+| 3.1 | DeepStream multi-source 파이프라인 (**2ch**, 현재) | **진행** — `configs/deepstream/deepstream_app_yolo_file_2ch.txt` |
+| 3.2 | YOLOv8m → ONNX → TensorRT engine build (`batch=NUM_CAMERAS`) | ✅ `yolov8m_person_b2_gpu0_fp16.engine` |
+| 3.3 | bbox 역변환 (resize → 원본 4K)               | ✅ `cam_acq.detection.bbox` + `tests/test_detection.py` |
+| 3.4 | overlay 테스트 영상 저장                       | **대기** — `deepstream_app_yolo_file_2ch_overlay.txt` |
+| 3.5 | detection 이벤트 → Recording trigger       | ✅ `cam_acq.detection.events.RecordingTrigger` |
+| 3.x | **3ch 전환** (NUM_CAMERAS=3)                 | **추후** |
 
 
 상세: `06_yolo_build_porting_guide.md`

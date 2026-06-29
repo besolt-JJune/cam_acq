@@ -27,7 +27,8 @@ cmake-build-*/
 *.o
 *.a
 
-# ML models (build on target GPU)
+# Third-party (cloned by scripts/setup_deepstream_yolo.sh)
+third_party/DeepStream-Yolo/
 models/*.engine
 models/*.onnx
 models/*.pt

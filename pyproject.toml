@@ -15,6 +15,7 @@ dependencies = [
 cam-acq-healthcheck = "cam_acq.tools.grab_healthcheck:main"
 cam-acq-ptp-test = "cam_acq.tools.ptp_test:main"
 cam-acq-timestamp-test = "cam_acq.tools.timestamp_test:main"
+cam-acq-build-yolo = "cam_acq.tools.build_yolo_engine:main"
 
 [build-system]
 requires = ["setuptools>=61"]

@@ -62,10 +62,24 @@ class Settings:
     camera_height: int
     timestamp_reset_on_session: bool
     cross_camera_skew_tolerance_ms: int
+    resize_width: int
+    resize_height: int
+    detection_model_path: Path
+    detection_onnx_path: Path
+    detection_confidence: float
+    detection_input_size: int
+    recording_buffer_sec: float
+    gpu_id: int
+    deepstream_yolo_lib: Path
 
     @property
     def camera_ips(self) -> list[str]:
         return [c.ip for c in self.cameras]
+
+    @property
+    def camera_indices(self) -> tuple[int, ...]:
+        """Active camera_index tuple (length = NUM_CAMERAS)."""
+        return tuple(c.index for c in self.cameras)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -80,6 +94,11 @@ def _env_bool(name: str, default: bool) -> bool:
     if raw in ("0", "false", "no", "off"):
         return False
     return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    return float(raw) if raw not in (None, "") else default
 
 
 def load_settings(env_file: Path | None = None) -> Settings:
@@ -107,6 +126,27 @@ def load_settings(env_file: Path | None = None) -> Settings:
         camera_height=_env_int("CAMERA_HEIGHT", 0),
         timestamp_reset_on_session=_env_bool("TIMESTAMP_RESET_ON_SESSION", True),
         cross_camera_skew_tolerance_ms=_env_int("CROSS_CAMERA_SKEW_TOLERANCE_MS", 50),
+        resize_width=_env_int("RESIZE_WIDTH", 960),
+        resize_height=_env_int("RESIZE_HEIGHT", 540),
+        detection_model_path=Path(
+            os.getenv(
+                "DETECTION_MODEL_PATH",
+                f"models/yolov8m_person_b{_env_int('NUM_CAMERAS', 1)}_gpu{_env_int('GPU_ID', 0)}_fp16.engine",
+            )
+        ),
+        detection_onnx_path=Path(
+            os.getenv("DETECTION_ONNX_PATH", "models/yolov8m_person.onnx")
+        ),
+        detection_confidence=_env_float("DETECTION_CONFIDENCE", 0.5),
+        detection_input_size=_env_int("DETECTION_INPUT_SIZE", 640),
+        recording_buffer_sec=_env_float("RECORDING_BUFFER_SEC", 10.0),
+        gpu_id=_env_int("GPU_ID", 0),
+        deepstream_yolo_lib=Path(
+            os.getenv(
+                "DEEPSTREAM_YOLO_LIB",
+                "third_party/DeepStream-Yolo/nvdsinfer_custom_impl_Yolo/libnvdsinfer_custom_impl_Yolo.so",
+            )
+        ),
     )
 
 
