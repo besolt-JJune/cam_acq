@@ -60,8 +60,8 @@ class Settings:
     pixel_format: str
     camera_width: int
     camera_height: int
-    ptp_enable: bool
-    ptp_sync_tolerance_us: int
+    timestamp_reset_on_session: bool
+    cross_camera_skew_tolerance_ms: int
 
     @property
     def camera_ips(self) -> list[str]:
@@ -105,8 +105,8 @@ def load_settings(env_file: Path | None = None) -> Settings:
         pixel_format=os.getenv("PIXEL_FORMAT", "BayerRG8"),
         camera_width=_env_int("CAMERA_WIDTH", 0),
         camera_height=_env_int("CAMERA_HEIGHT", 0),
-        ptp_enable=_env_bool("PTP_ENABLE", True),
-        ptp_sync_tolerance_us=_env_int("PTP_SYNC_TOLERANCE_US", 10),
+        timestamp_reset_on_session=_env_bool("TIMESTAMP_RESET_ON_SESSION", True),
+        cross_camera_skew_tolerance_ms=_env_int("CROSS_CAMERA_SKEW_TOLERANCE_MS", 50),
     )
 
 

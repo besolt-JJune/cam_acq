@@ -93,28 +93,21 @@ CAMERA1_INTERFACE=enp26s0
 
 `camera_index`는 0부터. IP octet과 무관.
 
-## 5. 시간 동기화 (PTP / Timestamp)
+## 5. 시간 동기화 (host clock — PTP 미사용)
 
 | 항목 | 현황 |
 |------|------|
 | Galaxy Viewer | PTP 관련 UI **미표시** |
 | PTP GenICam | **HW 미지원** (test 2대, `ptp_hw_supported: false`) |
 | SDK Timestamp API | `TimestampReset`, `TimestampLatch`, `TimestampLatchValue` |
-| 확인 CLI | `ptp_test`, `timestamp_test` (`--reset`) |
+| 확인 CLI | `ptp_test` (부정 확인), `timestamp_test` (`--reset`) |
 
-### 5.1 이 토폴로지에서 PTP
+### 5.1 PTP — 사용 안 함
 
-카메라가 **서로 다른 포트(L2 분리)** 에 연결되어 **카메라 간 PTP sync는 불가**.  
-현장 test: PTP feature **미구현** → PTP 경로 폐기.
+카메라가 **서로 다른 포트(L2 분리)** + GenICam PTP **미구현** → **PTP 경로 폐기**.  
+`ptp_test`는 미지원 확인용으로만 유지.
 
-### 5.2 확인 방법
-
-**PTP** — gxipy `FeatureControl` (`ptp_test`):
-
-1. `GevSupportedOptionSelector=Ptp` → `GevSupportedOption` → **false** (현장)
-2. `PtpEnable`/`PtpStatus` — **미구현** (현장)
-
-**Timestamp** — `timestamp_test` CLI:
+### 5.2 Timestamp / host clock
 
 1. `TimestampReset` / `TimestampLatch` / `TimestampLatchValue` implemented 여부
 2. `--reset`: latch → `TimestampReset` → latch (before/after JSON 기록)
@@ -132,6 +125,7 @@ CAMERA1_INTERFACE=enp26s0
 
 ## 6. 관련 문서
 
-- `01_sdk_feasibility.md` — PTP feature, Demosaic
+- `architecture.md` — TimeSyncManager, 데이터 흐름
+- `01_sdk_feasibility.md` — Timestamp API
 - `08_ssh_healthcheck_guide.md` — 취득 안정성 확인
-- `00_project_plan.md` — Phase 1.4 PTP test
+- `00_project_plan.md` — Phase 1 완료, Phase 2 TimeSync

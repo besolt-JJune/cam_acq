@@ -93,11 +93,10 @@ export LD_LIBRARY_PATH=$PWD/sdk/Galaxy_camera/c/lib/x86_64:$LD_LIBRARY_PATH
 # 설정 로드 self-check (카메라 불필요)
 uv run python tests/test_config.py
 
-# PTP feature test
+# PTP 미지원 확인 (부정 test, 기록용)
 uv run python -m cam_acq.tools.ptp_test --output ./healthcheck/ptp_report.json
-uv run python -m cam_acq.tools.ptp_test --enable --timeout 30
 
-# Timestamp feature / reset
+# Timestamp feature / 세션 앵커
 uv run python -m cam_acq.tools.timestamp_test --output ./healthcheck/timestamp_report.json
 uv run python -m cam_acq.tools.timestamp_test --reset --output ./healthcheck/timestamp_reset.json
 
@@ -134,12 +133,13 @@ trtexec --onnx=yolov8m.onnx --saveEngine=models/yolov8m_person.engine --fp16
 - [ ] `SetSocketBufferSize.sh` 적용
 - [ ] gxipy import + 카메라 1대 open
 - [ ] `uv run python tests/test_config.py`
-- [ ] `uv run python -m cam_acq.tools.ptp_test`
+- [ ] `uv run python -m cam_acq.tools.ptp_test` — `host_clock_sync` 확인
+- [ ] `uv run python -m cam_acq.tools.timestamp_test --reset`
 - [ ] `uv run python -m cam_acq.tools.grab_healthcheck --duration 60` PASS
 
 ## 9. 관련 문서
 
-- `09_network_topology.md` — netplan, PTP/NTP 현황
+- `09_network_topology.md` — netplan, 시간 동기화 (host clock)
 - `08_ssh_healthcheck_guide.md`
 - `06_yolo_build_porting_guide.md`
 - `00_project_plan.md`

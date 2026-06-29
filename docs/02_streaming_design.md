@@ -27,11 +27,12 @@
     resize frame (960×540) ──► Data Collector (23fps)
                                     │
                     detection meta ──┤
-                    FPS/PTP/storage ─┤
+                    FPS/storage ─────┤
+                    CPU/RAM/GPU/temp ┤
                                     ▼
                           WebSocket / MJPEG
                                     ▼
-                          Dashboard (≤ UI_MAX_DISPLAY_FPS)
+              Dashboard: 시스템 패널 + 카메라 (≤ UI_MAX_DISPLAY_FPS)
 ```
 
 ### 스트리밍 주체
@@ -66,6 +67,12 @@ localhost/WebSocket으로 충분하다.
 ```bash
 MONITORING_WEB_PORT=8080
 UI_MAX_DISPLAY_FPS=15
+SYSTEM_METRICS_POLL_SEC=2
+CPU_WARN_PERCENT=85
+RAM_WARN_PERCENT=85
+GPU_UTIL_WARN_PERCENT=90
+GPU_TEMP_WARN_C=80
+GPU_TEMP_CRITICAL_C=90
 RESIZE_WIDTH=960
 RESIZE_HEIGHT=540
 ```
@@ -73,14 +80,25 @@ RESIZE_HEIGHT=540
 ## 7. Phase 5 API (예정)
 
 ```
-GET /api/health
-GET /api/cameras/{camera_index}/stats
-GET /api/stream/{camera_index}    # MJPEG or WebSocket
+GET  /api/health
+GET  /api/system/metrics          # CPU, RAM, GPU util, VRAM, temperature
+GET  /api/cameras/{camera_index}/stats
+GET  /api/stream/{camera_index}   # MJPEG or WebSocket
+WS   /api/ws/dashboard            # 메트릭·상태 push
+POST /api/recording/trigger       # 수동 녹화
 ```
 
-SSH만 가능한 경우: `curl localhost:8080/api/health | jq`
+SSH만 가능한 경우:
+
+```bash
+curl -s localhost:8080/api/health | jq
+curl -s localhost:8080/api/system/metrics | jq '.cpu,.memory,.gpu'
+```
+
+Dashboard UI·레이아웃·임계치: `10_monitoring_design.md`
 
 ## 8. 관련 문서
 
+- `10_monitoring_design.md` — 시스템 메트릭, Dashboard UI
 - `08_ssh_healthcheck_guide.md` — GUI 없이 취득 확인
 - `architecture.md` — 전체 파이프라인

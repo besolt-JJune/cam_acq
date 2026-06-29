@@ -13,13 +13,14 @@
 |------|------|------|
 | 실행·설정·테스트 | Python | uv, `.env` |
 | 카메라 grab (3×4K) | Python (Phase 1) → C (병목 시) | 2대 PoC 후 결정 |
-| PTP / offline recovery | Python FeatureControl 또는 C | 샘플 참고 |
+| TimeSyncManager | Python | host monotonic + `TimestampReset` (`timestamp.py`) |
+| GigE offline recovery | Python FeatureControl 또는 C | `GxGigeRecovery` 샘플 |
 | Pre-buffer (Bayer 4K) | C 권장 / Python Phase 1 | RAM ring |
 | Resize / debayer | **DeepStream GPU** | `nvvideoconvert` |
 | Human Detection | DeepStream nvinfer | YOLOv8m TensorRT |
 | Recording encode | GStreamer/DeepStream **NVENC** | HW only |
 | Storage 관리 | Python | FIFO, 용량 |
-| Web Monitoring | Python (FastAPI) | 로컬 Dashboard |
+| Web Monitoring | Python (FastAPI) | 로컬 Dashboard, host metrics UI |
 | 로깅 | Python | 일별 파일 |
 
 ## 3. Demosaic 경로

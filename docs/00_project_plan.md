@@ -57,6 +57,7 @@
 | 코덱         | **NVENC HW** 사용, H.265 vs H.264는 **Phase 4 프로파일링 후 결정** |
 | Detection  | YOLOv8m (고정확도), TensorRT engine 별도 build                |
 | Streaming  | Resize 썸네일만, 수신 FPS 유지, `UI_MAX_DISPLAY_FPS`로 표시 상한     |
+| Monitoring | 카메라 FPS·detection·storage + **CPU/RAM/GPU/온도** Dashboard (`10_monitoring_design.md`) |
 | 메타데이터      | `.json` (session) + `.frames.jsonl` (프레임) 분리            |
 | DeepStream | **네이티브** (DS 9.0, Ubuntu 24.04 공식 지원)                   |
 
@@ -88,10 +89,10 @@
 | 1.1 | uv 프로젝트, `.env.example`, 설정 로더 | ✅ `uv sync`                     |
 | 1.2 | 일별 로깅                          | ✅ `LOG_PATH/YYYY-MM-DD.log`     |
 | 1.3 | Python gxipy 2대 동시 grab        | ✅ healthcheck PASS (22.6+ fps)  |
-| 1.4 | PTP feature test                 | ✅ PTP 미지원, host_clock_sync   |
+| 1.4 | PTP 부정 test (`ptp_test`)       | ✅ PTP 미지원, host_clock_sync   |
 | 1.5 | 테스트용 원본 프레임 저장                 | ✅ `samples/cam*_last.jpg`       |
 | 1.6 | `grab_healthcheck` CLI           | ✅ 현장 PASS                     |
-| 1.7 | `timestamp_test` CLI (`TimestampReset`) | 구현 완료 — `--reset` 현장 확인 |
+| 1.7 | `timestamp_test` (`TimestampReset`) | ✅ reset 지원 확인 (현장)        |
 
 
 **통과 기준:** 2대에서 23fps 안정 취득 (healthcheck PASS) → **Phase 1 완료**, Phase 2 진행.
@@ -191,12 +192,16 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 ### Phase 5 — Monitoring
 
 
-| ID  | 작업                                               |
-| --- | ------------------------------------------------ |
-| 5.1 | Data Collector (수신 FPS, detection, PTP, storage) |
-| 5.2 | Live Dashboard (최대 4ch, 로컬 폐쇄망)                  |
-| 5.3 | 수동 녹화 트리거 UI                                     |
-| 5.4 | `/api/health` (healthcheck 지표 연동)                |
+| ID  | 작업 |
+| --- | --- |
+| 5.1 | Data Collector (수신 FPS, detection, storage, 카메라 연결) |
+| 5.2 | **Host metrics** — CPU, RAM, GPU 사용률·VRAM, GPU 온도 (`psutil` + `pynvml`) |
+| 5.3 | Live Dashboard UI — **시스템 리소스 패널** + 카메라 그리드 (최대 4ch) |
+| 5.4 | 수동 녹화 트리거 UI |
+| 5.5 | REST `/api/health`, `/api/system/metrics` |
+| 5.6 | WebSocket `/api/ws/dashboard` (메트릭·상태 push) |
+
+상세 UI·API·임계치: `10_monitoring_design.md`
 
 
 ---
@@ -215,7 +220,8 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 | T7  | FIFO_DELETE                | 오래된 파일부터 삭제                      |
 | T8  | FIFO_REJECT                | 임계치 이후 저장 거부                     |
 | T9  | 카메라 disconnect             | 로그 + 자동 복구                       |
-| T10 | PTP drift                  | offset 로그 기록                     |
+| T10 | TimeSync drift             | 세션 앵커·timestamp offset 로그          |
+| T14 | Host metrics API           | CPU/RAM/GPU/온도 `/api/system/metrics` 유효 |
 | T11 | 전 채널 동시 trigger            | 3개 파일 동시 생성                      |
 | T12 | Pre-buffer RAM 실측          | 32GB 이내 확인                       |
 | T13 | 녹화 영상 재생                   | debayer 후 H.26x 정상 재생 (색상 깨짐 없음) |
@@ -238,6 +244,7 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 | `07_storage_capacity.md`         | 저장 용량 계산           |
 | `08_ssh_healthcheck_guide.md`    | SSH 원격 확인          |
 | `09_network_topology.md`         | 4-port NIC, netplan  |
+| `10_monitoring_design.md`        | Dashboard, CPU/GPU 메트릭 |
 | `architecture.md`                | 아키텍처 diagram       |
 
 

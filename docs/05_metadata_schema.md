@@ -24,22 +24,24 @@
     "type": "human_detection",
     "source": "auto",
     "manual": false,
-    "started_at_ptp_us": 0,
-    "ended_at_ptp_us": 0
+    "started_at_host_us": 0,
+    "ended_at_host_us": 0
   },
   "buffer": {
     "pre_sec": 10,
     "post_sec": 10
   },
-  "ptp": {
-    "enabled": true,
-    "status": "Slave",
-    "offset_from_master_us": 3
+  "time_sync": {
+    "strategy": "host_clock_sync",
+    "session_host_t0_us": 0,
+    "camera_ts0_us": 0,
+    "tick_frequency_hz": 1000000000,
+    "timestamp_reset_at_session": true
   },
   "split": {
     "interval_sec": 60,
-    "segment_start_ptp_us": 0,
-    "segment_end_ptp_us": 0
+    "segment_start_host_us": 0,
+    "segment_end_host_us": 0
   },
   "frames_file": "20250628_143022_cam0_seg00.frames.jsonl"
 }
@@ -48,7 +50,8 @@
 | 필드 | 설명 |
 |------|------|
 | `codec` | Phase 4 결정값 (`H264` 또는 `H265`) |
-| `trigger.source` | `auto` / `manual` |
+| `trigger.started_at_host_us` | 녹화 window 시작 (host monotonic, µs) |
+| `time_sync` | 세션 앵커 (`TimestampReset` + `host_t0`). PTP 미사용 |
 | `frames_file` | companion jsonl 경로 |
 
 ## 2. 프레임 메타 (`*.frames.jsonl`)
@@ -56,7 +59,7 @@
 한 줄 = JSON 객체 1개 (NDJSON).
 
 ```json
-{"frame_id":12345,"timestamp_us":9876543210,"ptp_timestamp_us":9876543210,"detections":[{"class":"person","confidence":0.91,"bbox_original":{"x1":100,"y1":200,"x2":300,"y2":600},"bbox_resized":{"x1":25,"y1":50,"x2":75,"y2":150}}],"recorded":true}
+{"frame_id":12345,"timestamp_us":371100,"host_recv_us":9876543210,"detections":[{"class":"person","confidence":0.91,"bbox_original":{"x1":100,"y1":200,"x2":300,"y2":600},"bbox_resized":{"x1":25,"y1":50,"x2":75,"y2":150}}],"recorded":true}
 ```
 
 ### 필드
@@ -64,9 +67,8 @@
 | 필드 | 타입 | 설명 |
 |------|------|------|
 | `frame_id` | int | 카메라 frame ID |
-| `timestamp_us` | int | 카메라 내부 tick → Hz로 µs 변환 (`TimestampTickFrequency`) |
-| `host_recv_us` | int | 호스트 수신 시각 (monotonic 기준, Phase 2) |
-| `ptp_timestamp_us` | int | **미사용** (PTP 미지원) — 예약 필드 |
+| `timestamp_us` | int | 카메라 tick → µs (`TimestampTickFrequency`, 세션 기준 상대값) |
+| `host_recv_us` | int | 호스트 수신 시각 (monotonic, µs) |
 | `detections` | array | 검출 목록 |
 | `detections[].class` | string | `"person"` |
 | `detections[].confidence` | float | 0~1 |
@@ -89,7 +91,7 @@ x1_orig = (x1_det - pad_x) * scale_x
 | 우선순위 | 내용 |
 |----------|------|
 | P0 (테스트 T6) | session `.json` + `.frames.jsonl` 동기 저장 |
-| P1 | PTP timestamp 통일 | **취소** — `TimestampReset` 세션 앵커 + host clock |
+| P1 | TimeSync 세션 앵커 | `TimestampReset` + host monotonic (`architecture.md` §3.3) |
 | P2 | 추가 센서/이벤트 필드 |
 
 ## 4. 테스트 (T6)

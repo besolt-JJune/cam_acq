@@ -8,8 +8,8 @@ SDK 경로: `sdk/Galaxy_camera/c`, `sdk/Galaxy_camera/python`
 | 기능 | 구현 가능 | 구현 위치 | SDK 근거 |
 |------|-----------|-----------|----------|
 | 다중 카메라 스트리밍 | ✅ | SDK + 앱 | `GXUpdateAllDeviceList`, IP/MAC 오픈, `GXGetImage`/callback |
-| 프레임 타임스탬프 | ✅ | 카메라 + SDK | `GX_FRAME_DATA.nTimestamp`, `TimestampLatch`/`TimestampLatchValue` |
-| PTP 동기화 | ✅ (HW test 필요) | 카메라 GenICam | `PtpEnable`, `PtpStatus`, `PtpOffsetFromMaster` |
+| 프레임 타임스탬프 | ✅ | 카메라 + SDK | `get_timestamp()`, `TimestampReset`, `TimestampLatchValue` |
+| PTP 동기화 | ❌ **미지원** (현장 확인) | — | `PtpEnable`/`PtpStatus` 미구현; host clock 사용 |
 | 연결 끊김/복구 | ✅ | SDK | `GXRegisterDeviceOfflineCallback`, `GxGigeRecovery` 샘플 |
 | ExposureTime, Gain, FPS | ✅ | **카메라 내부** | GenICam feature (후처리 아님) |
 | 해상도 (Width/Height) | ✅ | **카메라 내부** | `Width`, `Height`, ROI/Binning |
@@ -85,7 +85,7 @@ CAMERA_WIDTH=0    # 0 = SDK auto
 CAMERA_HEIGHT=0
 ```
 
-## 5. PTP / 시간 동기화
+## 5. 시간 동기화 (host clock)
 
 ### SDK feature (문서·API 기준)
 

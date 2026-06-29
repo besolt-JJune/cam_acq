@@ -23,7 +23,9 @@ def _report_to_dict(r: PtpCameraReport) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     """CLI: 0=all opened, 1=any open fail, 2=config error."""
-    parser = argparse.ArgumentParser(description="PTP feature test via gxipy")
+    parser = argparse.ArgumentParser(
+        description="PTP GenICam probe (negative test — expect unsupported)"
+    )
     parser.add_argument(
         "--enable",
         action="store_true",
@@ -73,11 +75,7 @@ def main(argv: list[str] | None = None) -> int:
         "topology_note": "4-port NIC direct attach: inter-camera PTP sync unlikely",
         "cross_sync_possible": cross_sync,
         "cameras": cameras_json,
-        "recommendation": (
-            "host_clock_sync"
-            if not cross_sync
-            else "ptp_time_sync_manager"
-        ),
+        "recommendation": "host_clock_sync",
     }
 
     out = args.output

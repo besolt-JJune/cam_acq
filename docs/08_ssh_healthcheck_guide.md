@@ -173,13 +173,17 @@ scp user@cam-server:/path/to/cam_acq/samples/*.jpg ./
 | 1 | `--save-sample` | 육안 화질 확인 |
 | 2 | `--duration 3600` | 1시간 soak |
 | 2 | `NUM_CAMERAS=3` | 운영 구성 검증 |
-| 5+ | `GET /api/health` | Web 동일 지표 |
+| 5+ | `GET /api/health` | Web 카메라·시스템 요약 |
+| 5+ | `GET /api/system/metrics` | CPU, RAM, GPU, 온도 |
 
 Phase 5 이후:
 
 ```bash
 curl -s localhost:8080/api/health | jq
+curl -s localhost:8080/api/system/metrics | jq '.cpu,.memory,.gpu'
 ```
+
+Dashboard UI (시스템 패널 + 카메라 그리드): `10_monitoring_design.md`
 
 ## 10. 트러블슈팅
 
@@ -188,11 +192,14 @@ curl -s localhost:8080/api/health | jq
 | FAIL fps 낮음 | MTU/jumbo, `SetSocketBufferSize.sh`, 링크 속도 |
 | incomplete_frames > 0 | CPU/버퍼, 패킷 손실 |
 | frame_drops > 0 | grab 스레드 부하 |
+| GPU 온도 critical | NVENC+YOLO 부하, `GPU_TEMP_*` 임계치, 냉각 |
+| RAM warn | pre-buffer 실측 (`07_storage_capacity.md`) |
 | exit=2 | `LD_LIBRARY_PATH`, gxipy, IP 오타 |
 | sample 색 이상 | Bayer `PixelColorFilter` / demosaic 설정 |
 
 ## 11. 관련 문서
 
 - `00_project_plan.md` — Phase 1
+- `10_monitoring_design.md` — Dashboard, host metrics
 - `01_sdk_feasibility.md` — Demosaic
 - `04_install_guide.md` — Socket buffer
