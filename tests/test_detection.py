@@ -6,12 +6,14 @@ from cam_acq.detection.bbox import (
     bbox_resized_to_original,
     clamp_bbox_to_frame,
     filter_person_detections,
+    mux_bbox_to_camera,
     RawDetection,
 )
 from cam_acq.detection.events import (
     DetectionFrameEvent,
     RecordingTrigger,
     build_detection_event,
+    build_detection_event_from_mux,
 )
 
 
@@ -65,6 +67,32 @@ def test_build_detection_event():
   assert ev.detections[0].bbox_original.x1 >= 0
 
 
+def test_mux_bbox_to_camera():
+    bbox = BBox(100.0, 50.0, 200.0, 150.0)
+    orig = mux_bbox_to_camera(bbox, 960, 540, 3840, 2160)
+    assert orig.x1 == 400.0
+    assert orig.y2 == 600.0
+
+
+def test_build_detection_event_from_mux():
+    raw = [RawDetection(0, "person", 0.88, BBox(96.0, 54.0, 192.0, 162.0))]
+    ev = build_detection_event_from_mux(
+        camera_index=1,
+        frame_id=7,
+        timestamp_us=1000,
+        host_recv_us=2_000_000,
+        raw=raw,
+        resize_w=960,
+        resize_h=540,
+        camera_w=3840,
+        camera_h=2160,
+        confidence_threshold=0.5,
+    )
+    assert ev.has_person
+    assert ev.camera_index == 1
+    assert ev.detections[0].bbox_original.x2 == 768.0
+
+
 def test_recording_trigger_opens_once():
   import time
 
@@ -98,5 +126,7 @@ if __name__ == "__main__":
   test_clamp_bbox()
   test_filter_person()
   test_build_detection_event()
+  test_mux_bbox_to_camera()
+  test_build_detection_event_from_mux()
   test_recording_trigger_opens_once()
   print("ok")

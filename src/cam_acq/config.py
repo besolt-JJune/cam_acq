@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from dotenv import load_dotenv
+from cam_acq.camera.frame import DebayerBackend, parse_debayer_backend
 
 # Nominal camera FPS for healthcheck frame-count threshold.
 NOMINAL_FPS = 23.0
@@ -73,6 +73,7 @@ class Settings:
     detection_confidence: float
     detection_input_size: int
     recording_buffer_sec: float
+    debayer_backend: DebayerBackend
     gpu_id: int
     deepstream_yolo_lib: Path
 
@@ -150,6 +151,7 @@ def load_settings(env_file: Path | None = None) -> Settings:
         detection_confidence=_env_float("DETECTION_CONFIDENCE", 0.5),
         detection_input_size=_env_int("DETECTION_INPUT_SIZE", 640),
         recording_buffer_sec=_env_float("RECORDING_BUFFER_SEC", 10.0),
+        debayer_backend=parse_debayer_backend(os.getenv("DEBAYER_MODE", DebayerBackend.CPU_SDK.value)),
         gpu_id=_env_int("GPU_ID", 0),
         deepstream_yolo_lib=Path(
             os.getenv(

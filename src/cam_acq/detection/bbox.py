@@ -104,6 +104,26 @@ class RawDetection:
     bbox: BBox
 
 
+def mux_bbox_to_camera(
+    bbox: BBox,
+    resize_w: int,
+    resize_h: int,
+    camera_w: int,
+    camera_h: int,
+) -> BBox:
+    """Map nvinfer bbox (mux / resize pixels) to full camera resolution."""
+    if resize_w <= 0 or resize_h <= 0 or camera_w <= 0 or camera_h <= 0:
+        return bbox
+    sx = camera_w / resize_w
+    sy = camera_h / resize_h
+    return BBox(
+        x1=bbox.x1 * sx,
+        y1=bbox.y1 * sy,
+        x2=bbox.x2 * sx,
+        y2=bbox.y2 * sy,
+    )
+
+
 def filter_person_detections(
     detections: list[RawDetection],
     *,

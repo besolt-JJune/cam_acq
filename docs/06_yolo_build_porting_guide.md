@@ -254,14 +254,22 @@ person 필터 **이후** 저장되므로 `detections[]`에는 person만 등장.
 
 **Ultralytics (export 직후):** §3.2 `classes=0` predict
 
-**DeepStream (통합):**
+**DeepStream file 소스 (카메라 불필요):**
 
 ```bash
-deepstream-app -c configs/deepstream_app_yolo_3cam.txt
+deepstream-app -c configs/deepstream/deepstream_app_yolo_file_2ch_overlay.txt
 ```
 
-- overlay에서 person bbox만 기대 (nvinfer가 다른 class도 그릴 수 있으면 3.6·3.7 확인)
-- trigger 이벤트·메타 JSON에 `"class":"person"`만 있는지 확인
+**Live GigE 2ch (카메라 필요):**
+
+```bash
+export LD_LIBRARY_PATH=$PWD/sdk/Galaxy_camera/c/lib/x86_64:$LD_LIBRARY_PATH
+uv run cam-acq-yolo-live --duration 30 --output ./healthcheck/yolo_live.json
+# overlay MP4: samples/deepstream_yolo_overlay_live_2ch.mp4
+```
+
+- overlay에서 person bbox만 기대 (`filter-out-class-ids` §3.6)
+- `frames_pushed` / `fps_pushed_avg` ≥ 18 (23fps 목표의 ~80%)
 
 **단위 테스트:**
 
@@ -343,14 +351,26 @@ letterbox padding (`pad_x`, `pad_y`) 보정 후 `bbox_original` 산출.
 
 ## 7. 검증
 
+**File 소스 (카메라 불필요):**
+
 ```bash
-deepstream-app -c configs/deepstream_app_yolo_3cam.txt
+deepstream-app -c configs/deepstream/deepstream_app_yolo_file_2ch_overlay.txt
 ```
 
-- overlay 영상에서 person bbox 확인
-- `DETECTION_CONFIDENCE` (기본 0.5) 조정 — **§3.5**
-- trigger 이벤트 발행 확인 — **§3.8**
-- person-only 전체 체크 — **§3.10**
+**Live 2ch (카메라 + pyds):**
+
+```bash
+export LD_LIBRARY_PATH=$PWD/sdk/Galaxy_camera/c/lib/x86_64:$LD_LIBRARY_PATH
+uv run cam-acq-yolo-live --duration 30 --output ./healthcheck/yolo_live.json
+jq '.detection' ./healthcheck/yolo_live.json
+```
+
+현장 검증 체크리스트: `11_field_pending_work.md` §6
+
+- overlay person bbox — §6.2
+- `detection.trigger_events` — §6.3 (`RecordingTrigger` via nvinfer probe)
+- `DETECTION_CONFIDENCE` — §3.5
+- person-only — §3.10 (`tests/test_detection.py`)
 
 
 

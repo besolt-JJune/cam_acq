@@ -13,6 +13,7 @@ from cam_acq.detection.bbox import (
     bbox_resized_to_original,
     clamp_bbox_to_frame,
     filter_person_detections,
+    mux_bbox_to_camera,
 )
 
 
@@ -48,6 +49,47 @@ class DetectionFrameEvent:
     @property
     def has_person(self) -> bool:
         return len(self.detections) > 0
+
+
+def build_detection_event_from_mux(
+    *,
+    camera_index: int,
+    frame_id: int,
+    timestamp_us: int,
+    host_recv_us: int | None,
+    raw: list[RawDetection],
+    resize_w: int,
+    resize_h: int,
+    camera_w: int,
+    camera_h: int,
+    confidence_threshold: float,
+) -> DetectionFrameEvent:
+    """Build event from nvinfer rects in mux (resize) coordinates."""
+    persons = filter_person_detections(raw, confidence_threshold=confidence_threshold)
+    mapped: list[Detection] = []
+    for d in persons:
+        orig = clamp_bbox_to_frame(
+            mux_bbox_to_camera(d.bbox, resize_w, resize_h, camera_w, camera_h),
+            camera_w,
+            camera_h,
+        )
+        mapped.append(
+            Detection(
+                class_id=d.class_id,
+                class_name=d.class_name or PERSON_CLASS_NAME,
+                confidence=d.confidence,
+                bbox_resized=d.bbox,
+                bbox_original=orig,
+            )
+        )
+    recv = host_recv_us if host_recv_us is not None else int(time.monotonic() * 1_000_000)
+    return DetectionFrameEvent(
+        camera_index=camera_index,
+        frame_id=frame_id,
+        timestamp_us=timestamp_us,
+        host_recv_us=recv,
+        detections=tuple(mapped),
+    )
 
 
 def build_detection_event(

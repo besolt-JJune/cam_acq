@@ -119,15 +119,17 @@
 ### Phase 3 — DeepStream + YOLO
 
 
-| ID  | 작업                                      |
-| --- | --------------------------------------- |
-| 3.1 | DeepStream multi-source 파이프라인 (**2ch**, live) | ✅ `cam-acq-yolo-live` |
-| 3.2 | YOLOv8m → ONNX → TensorRT engine build (`batch=NUM_CAMERAS`) | ✅ `yolov8m_person_b2_gpu0_fp16.engine` |
-| 3.3 | bbox 역변환 (resize → 원본 4K)               | ✅ `cam_acq.detection.bbox` + `tests/test_detection.py` |
-| 3.4 | overlay 테스트 영상 저장 (live)                  | ✅ `samples/deepstream_yolo_overlay_live_2ch.mp4` |
-| 3.5 | detection 이벤트 → Recording trigger       | ✅ `cam_acq.detection.events.RecordingTrigger` |
-| 3.x | **3ch 전환** (NUM_CAMERAS=3)                 | **추후** — `11_field_pending_work.md` §5 |
+| ID  | 작업 | 코드 | 검증 (현장/테스트) |
+| --- | --------------------------------------- | --- | --- |
+| 3.1 | DeepStream multi-source 파이프라인 (**2ch**, live) | ✅ `cam-acq-yolo-live` | 추후 |
+| 3.2 | YOLOv8m → ONNX → TensorRT engine build (`batch=NUM_CAMERAS`) | ✅ | ✅ |
+| 3.3 | bbox 역변환 (resize → 원본 4K) | ✅ `bbox.py`, `events.py` | ✅ unit |
+| 3.4 | overlay 테스트 영상 저장 (live) | ✅ MP4 finalize·stride 수정 | 추후 육안 |
+| 3.5 | nvinfer meta → `RecordingTrigger` | ✅ `gst_meta.py` probe | 추후 (pyds + 사람) |
+| 3.6 | GPU debayer (Phase 3 경로) | ✅ `DebayerBackend` 인터페이스 | 추후 (`gpu_phase3`) |
+| 3.x | **3ch 전환** (`NUM_CAMERAS=3`) | **추후** | `11_field_pending_work.md` §5 |
 
+**Phase 3 코드 완료.** 남은 항목은 `11_field_pending_work.md` §6 현장 검증.
 
 상세: `06_yolo_build_porting_guide.md`
 

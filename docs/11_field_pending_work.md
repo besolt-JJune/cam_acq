@@ -124,6 +124,48 @@ uv run cam-acq-build-yolo --env-file .env --variant person --batch-size 3
 
 ---
 
+## 6. 추후 — Phase 3 현장 검증 (코드 완료, 테스트 대기)
+
+코드는 반영됨. 아래는 **사람·카메라·pyds** 가 필요한 검증만 남음.
+
+### 6.1 pyds 설치 (nvinfer probe)
+
+DS 9는 pyds wheel 미동봉. bindings 빌드 후 venv에 설치:
+
+```bash
+# /opt/nvidia/deepstream/deepstream/sources/ 에 deepstream_python_apps clone
+cd deepstream_python_apps/bindings
+export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
+python3 -m build
+uv pip install dist/pyds-*.whl
+```
+
+`cam-acq-yolo-live` JSON의 `detection.pyds_warning` 이 없어야 probe 동작.
+
+### 6.2 overlay·detection 육안 검증 (3.4)
+
+- `samples/deepstream_yolo_overlay_live_2ch.mp4` — person bbox만, 화면 정상(대각선 밀림 없음)
+- `DETECTION_CONFIDENCE` 튜닝
+
+### 6.3 trigger 이벤트 (3.5)
+
+사람 walk-through 시 JSON `detection.trigger_events` 에 `human_detection` 기록.
+
+```bash
+uv run cam-acq-yolo-live --duration 60 --output ./healthcheck/yolo_live_trigger.json
+jq '.detection' ./healthcheck/yolo_live_trigger.json
+```
+
+### 6.4 YOLO live soak (안정성)
+
+30분~1시간 `cam-acq-yolo-live` — FPS·메모리·MP4 반복 확인 (사람 없어도 가능, trigger 검증은 §6.3).
+
+### 6.5 GPU debayer — Phase 3 경로 (3.6)
+
+`.env` `DEBAYER_MODE=gpu_phase3` — **미구현** (인터페이스만). 녹화용 GPU debayer는 Phase 4 (`gpu_phase4`).
+
+---
+
 ## 4. 관련 문서
 
 - `08_ssh_healthcheck_guide.md` — CLI 옵션, 리포트 형식
