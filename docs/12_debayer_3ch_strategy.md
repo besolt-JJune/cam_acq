@@ -167,12 +167,22 @@ uv run cam-acq-yolo-live --duration 60 --no-record \
   --output ./healthcheck/yolo_live_3ch_mixed.json
 ```
 
-### 5.5 리소스 (녹화 동시)
+### 5.5 리소스 (녹화 동시) — **3ch 메모리 실측 추후**
+
+2ch 실측 완료 (`07_storage_capacity.md` §5.1). **3ch는 cam2 연결 후** 아래 실행 → `11_field_pending_work.md` §6.9.2.
 
 ```bash
-uv run cam-acq-memory-profile --output ./healthcheck/memory_profile_3ch.json
-# YOLO+trigger 녹화 integration은 사람 walk-through 또는 record-test 3ch 확장 후
+NUM_CAMERAS=3 uv run cam-acq-memory-profile \
+  --output ./healthcheck/memory_profile_3ch.json
 ```
+
+| 항목 | 내용 |
+|------|------|
+| 필수 | 현행 buffer 5s / 23fps — 3ch ring·RSS·VRAM peak |
+| 선택 | buffer 2s / fps 20 — 단축안 (`07_storage_capacity.md` §5.3 B) |
+| 미완 | 3ch + YOLO live + trigger 녹화 동시 soak |
+
+YOLO+trigger 녹화 integration은 사람 walk-through 또는 record-test 3ch 확장 후.
 
 ### 5.6 debayer 모드 비교 (2ch 기준 스크립트)
 

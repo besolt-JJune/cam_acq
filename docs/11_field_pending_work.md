@@ -247,16 +247,35 @@ uv run cam-acq-codec-profile --camera-index 0 \
 
 결과 반영: `.env` `ENCODING_CODEC`, `docs/07_storage_capacity.md` 표 갱신.
 
-### 6.9 Phase 4.9 RAM/VRAM 실측 (2ch)
+### 6.9 Phase 4.9 RAM/VRAM 실측
+
+#### 6.9.1 2ch — 완료 (2026-06-29)
 
 ```bash
 source venv.sh
 uv run cam-acq-memory-profile --output ./healthcheck/memory_profile.json
 ```
 
-기본: duration 40s (ring fill 20s + trigger/encode), 1s poll. 리포트 `ring_memory_bytes_total`, `peaks.*`.
+기본: `RECORDING_BUFFER_SEC=5`, 23fps, duration 40s (ring fill + trigger/encode), 1s poll.  
+리포트: `ring_memory_bytes_total`, `peaks.*`. 상세: `07_storage_capacity.md` §5.1.
 
-3ch·YOLO 동시는 integration test 때 재측정.
+#### 6.9.2 3ch — **추후** (cam2 연결 후)
+
+**전제:** `NUM_CAMERAS=3`, 3ch grab PASS (`§5.1`), YOLO engine `batch=3` (`§5.2`).
+
+```bash
+source venv.sh
+NUM_CAMERAS=3 uv run cam-acq-memory-profile \
+  --output ./healthcheck/memory_profile_3ch.json
+```
+
+| 측정 | 조건 | 목적 |
+|------|------|------|
+| **필수** | 현행 `.env` (buffer 5s, 23fps) | 3ch ring·RSS·VRAM peak — `07_storage_capacity.md` §5.1 3ch 추정 검증 |
+| **선택** | buffer **2s**, fps **20** (`.env`/`AcquisitionFrameRate` 변경 후) | 단축안 RAM — `07_storage_capacity.md` §5.3 시나리오 B |
+
+3ch+YOLO 동시 부하는 `cam-acq-yolo-live` / record-test integration 후 추가 soak 권장.  
+절차: `12_debayer_3ch_strategy.md` §5.5.
 
 ---
 

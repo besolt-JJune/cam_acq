@@ -150,7 +150,7 @@
 | 4.6 | H.265 vs H.264 프로파일링 | **cam0 ✅** → **H.264** | `cam-acq-codec-profile` |
 | 4.7 | 메타데이터 (`.json` + `.frames.jsonl`) | ✅ `recording/metadata.py` | `cam-acq-record-test` |
 | 4.8 | StorageManager (FIFO, fallback) | ✅ `recording/storage.py` | ✅ unit |
-| 4.9 | RAM/VRAM 실측 | **2ch ✅** (3ch+YOLO 추후) | `cam-acq-memory-profile` |
+| 4.9 | RAM/VRAM 실측 | **2ch ✅**; **3ch 추후** (`11_field_pending_work.md` §6.9.2) | `cam-acq-memory-profile` |
 
 
 #### 4.1 코덱 결정 절차 (H.265 vs H.264)
