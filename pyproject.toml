@@ -1,0 +1,27 @@
+[project]
+name = "cam-acq"
+version = "0.1.0"
+description = "Multi-camera GigE acquisition, detection, and recording"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "python-dotenv>=1.0",
+    "pillow>=10.0",
+    "numpy>=1.26",
+    "gxipy",
+]
+
+[project.scripts]
+cam-acq-healthcheck = "cam_acq.tools.grab_healthcheck:main"
+cam-acq-ptp-test = "cam_acq.tools.ptp_test:main"
+cam-acq-timestamp-test = "cam_acq.tools.timestamp_test:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv.sources]
+gxipy = { path = "sdk/Galaxy_camera/python/api", editable = true }

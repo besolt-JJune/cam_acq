@@ -42,7 +42,9 @@ recordings/
 *.raw
 
 # Logs & healthcheck output
+healthcheck/
 logs/
+samples/
 *.log
 
 # Cursor (mcp.json may contain API keys)

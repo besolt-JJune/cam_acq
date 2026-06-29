@@ -64,8 +64,9 @@
 | 필드 | 타입 | 설명 |
 |------|------|------|
 | `frame_id` | int | 카메라 frame ID |
-| `timestamp_us` | int | SDK timestamp (µs) |
-| `ptp_timestamp_us` | int | PTP 기준 (확정 후 통일) |
+| `timestamp_us` | int | 카메라 내부 tick → Hz로 µs 변환 (`TimestampTickFrequency`) |
+| `host_recv_us` | int | 호스트 수신 시각 (monotonic 기준, Phase 2) |
+| `ptp_timestamp_us` | int | **미사용** (PTP 미지원) — 예약 필드 |
 | `detections` | array | 검출 목록 |
 | `detections[].class` | string | `"person"` |
 | `detections[].confidence` | float | 0~1 |
@@ -88,7 +89,7 @@ x1_orig = (x1_det - pad_x) * scale_x
 | 우선순위 | 내용 |
 |----------|------|
 | P0 (테스트 T6) | session `.json` + `.frames.jsonl` 동기 저장 |
-| P1 | PTP timestamp 통일 |
+| P1 | PTP timestamp 통일 | **취소** — `TimestampReset` 세션 앵커 + host clock |
 | P2 | 추가 센서/이벤트 필드 |
 
 ## 4. 테스트 (T6)

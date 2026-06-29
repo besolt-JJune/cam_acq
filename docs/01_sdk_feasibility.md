@@ -85,13 +85,43 @@ CAMERA_WIDTH=0    # 0 = SDK auto
 CAMERA_HEIGHT=0
 ```
 
-## 5. PTP
+## 5. PTP / 시간 동기화
+
+### SDK feature (문서·API 기준)
+
+**PTP (미지원 확인됨 — 현장 test 2대)**
 
 - Feature: `PtpEnable`, `PtpStatus`, `PtpOffsetFromMaster`, `PtpDataSetLatch`
 - Python: `FeatureControl` 문자열 API (`cam.get_remote_device_feature_control()`)
 - 샘플: `c/sample/CSharp/GxActionCommand/` (PTP + ActionCommand)
-- 역할 할당: `PtpEnable=true` 후 약 8초, µs 정밀도는 1~2분 폴링 가능
-- **카메라 test로 지원 여부 확정 후 구현**
+
+**Timestamp (GenICam 카운터)**
+
+| Feature | 타입 | 역할 |
+|---------|------|------|
+| `TimestampTickFrequency` / `GevTimestampTickFrequency` | int (read) | tick Hz → µs 변환 |
+| `TimestampLatch` | command | 현재 카운터 latch |
+| `TimestampLatchValue` | int (read) | latch 값 |
+| `TimestampReset` | command | **카운터 0 리셋** (wall clock 설정 아님) |
+| `ChunkTimestamp` | int (read) | Chunk mode 시 FrameStart 시각 |
+
+- Python (Device shortcut): `cam.TimestampReset.send_command()` 등 (`gxipy/Device.py`)
+- CLI: `cam_acq.tools.timestamp_test` (`--reset`로 실제 리셋 + before/after 기록)
+- Phase 2 `TimeSyncManager`: 세션 시작 시 `reset_all_timestamps()` + host `monotonic` 앵커
+
+### 현장 확인 사항 (2026-06-29, test 2대)
+
+| 항목 | 결과 |
+|------|------|
+| Galaxy Viewer | PTP 관련 UI **없음** |
+| `ptp_test` | `ptp_hw_supported: false` (2대), `recommendation: host_clock_sync` |
+| `grab_healthcheck` 60s | **PASS** — cam0 22.7fps, cam1 22.6fps, drop 0 |
+| `timestamp_test` | Phase 2에서 `--reset` 실행 후 결과 기록 예정 |
+
+### 토폴로지 (4-port 직결)
+
+카메라가 포트별 L2 분리 → **카메라 간 PTP sync 불가**.  
+**운영 동기화:** host monotonic (이벤트·녹화) + per-camera `frame.timestamp` (드랍·순서) + 세션 시작 `TimestampReset` (상대 0점). 상세: `09_network_topology.md`
 
 ## 6. GigE 복구
 
@@ -111,7 +141,7 @@ Bayer8/Mono8 기준 2.5GigE 링크 내 수용 가능. 카메라별 독립 NIC(4c
 | 항목 | 상태 |
 |------|------|
 | Jumbo frame / MTU | 설정 완료 |
-| Socket buffer | `c/SetSocketBufferSize.sh` — **미적용, 설치 시 적용** |
+| Socket buffer | `c/SetSocketBufferSize.sh` — **적용 완료** |
 
 ```bash
 sudo sdk/Galaxy_camera/c/SetSocketBufferSize.sh 20971520  # 20MB 예시

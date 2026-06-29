@@ -19,7 +19,7 @@
 카메라를 N초간 취득하고 FPS·드랍·프레임 완전성을 측정해  
 **JSON 리포트 + 종료 코드(PASS/FAIL)** 를 남기는 CLI.
 
-> Phase 1에서 구현 예정 (`cam_acq.tools.grab_healthcheck`)
+> Phase 1 CLI (`cam_acq.tools.grab_healthcheck`)
 
 ### 3.1 실행
 
@@ -49,7 +49,23 @@ uv run python -m cam_acq.tools.grab_healthcheck \
 | 1 | FAIL (기준 미달 또는 카메라 오픈 실패) |
 | 2 | 설정/환경 오류 (.env, SDK path 등) |
 
-## 4. PASS / FAIL 기준
+## 4. `timestamp_test` (세션 timestamp 앵커)
+
+PTP 미지원 환경에서 카메라 내부 카운터 feature 확인 및 `TimestampReset` 실행.
+
+```bash
+uv run python -m cam_acq.tools.timestamp_test --output ./healthcheck/timestamp_report.json
+uv run python -m cam_acq.tools.timestamp_test --reset --output ./healthcheck/timestamp_reset.json
+```
+
+| 옵션 | 설명 |
+|------|------|
+| (기본) | `TimestampReset`/`TimestampLatch` implemented 여부 + latch 값 |
+| `--reset` | latch → `TimestampReset` → latch (before/after JSON) |
+
+종료 코드: `ptp_test`와 동일 (0=성공, 1=오픈/리셋 실패, 2=설정 오류).
+
+## 5. PASS / FAIL 기준
 
 | 항목 | FAIL 조건 |
 |------|-----------|
@@ -59,7 +75,7 @@ uv run python -m cam_acq.tools.grab_healthcheck \
 | `frames_received` | < `duration × 23 × 0.95` |
 | 카메라 오픈 | 1대라도 실패 |
 
-## 5. 리포트 형식 (`report.json`)
+## 6. 리포트 형식 (`report.json`)
 
 ```json
 {
@@ -104,7 +120,7 @@ Bayer → SDK `convert("RGB")` 후 저장 (육안 확인용).
 scp user@cam-server:/path/to/cam_acq/samples/cam0_last.jpg ./
 ```
 
-## 6. 개발자 워크플로 (SSH)
+## 7. 개발자 워크플로 (SSH)
 
 ### 6.1 기본 확인 (2대 test env)
 
@@ -140,7 +156,7 @@ scp user@cam-server:/var/log/cam_acq/healthcheck/report.json ./
 scp user@cam-server:/path/to/cam_acq/samples/*.jpg ./
 ```
 
-## 7. 로그
+## 8. 로그
 
 | 파일 | 내용 |
 |------|------|
@@ -148,11 +164,12 @@ scp user@cam-server:/path/to/cam_acq/samples/*.jpg ./
 | `healthcheck/grab_YYYYMMDD.log` | 텍스트 로그 |
 | `LOG_PATH/YYYY-MM-DD.log` | 시스템 통합 로그 |
 
-## 8. Phase별 사용
+## 9. Phase별 사용
 
 | Phase | 명령 | 목적 |
 |-------|------|------|
 | 1 | `--duration 60` | 2대 기본 안정 확인 |
+| 1 | `timestamp_test --reset` | 세션 timestamp 앵커 확인 |
 | 1 | `--save-sample` | 육안 화질 확인 |
 | 2 | `--duration 3600` | 1시간 soak |
 | 2 | `NUM_CAMERAS=3` | 운영 구성 검증 |
@@ -164,7 +181,7 @@ Phase 5 이후:
 curl -s localhost:8080/api/health | jq
 ```
 
-## 9. 트러블슈팅
+## 10. 트러블슈팅
 
 | 증상 | 확인 |
 |------|------|
@@ -174,7 +191,7 @@ curl -s localhost:8080/api/health | jq
 | exit=2 | `LD_LIBRARY_PATH`, gxipy, IP 오타 |
 | sample 색 이상 | Bayer `PixelColorFilter` / demosaic 설정 |
 
-## 10. 관련 문서
+## 11. 관련 문서
 
 - `00_project_plan.md` — Phase 1
 - `01_sdk_feasibility.md` — Demosaic

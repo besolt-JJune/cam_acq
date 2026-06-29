@@ -4,7 +4,10 @@
 
 
 import numpy
-from numpy.compat import long
+try:
+    from numpy.compat import long
+except ImportError:
+    long = int  # ponytail: numpy 2.x removed compat; gxipy only needs Py2 long alias
 
 from gxipy.Device import Device
 from gxipy.gxwrapper import *
