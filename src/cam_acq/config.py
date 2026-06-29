@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from cam_acq.camera.frame import DebayerBackend, parse_debayer_backend
+from dotenv import load_dotenv
 
 # Nominal camera FPS for healthcheck frame-count threshold.
 NOMINAL_FPS = 23.0

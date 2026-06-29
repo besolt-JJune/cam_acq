@@ -12,15 +12,17 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-import numpy as np
+# gi (via gst_live) must load before numpy (frame/gst_live use numpy after gi init)
+from cam_acq.detection.gst_live import DeepStreamYoloLive
+from cam_acq.detection.gst_meta import LiveDetectionBridge
 
 from cam_acq.camera.device import close_camera, open_camera_by_ip
 from cam_acq.camera.frame import DebayerBackend, raw_image_to_frame
 from cam_acq.config import NOMINAL_FPS, load_settings, project_root, setup_galaxy_lib_path
 from cam_acq.detection.events import RecordingTrigger
-from cam_acq.detection.gst_live import DeepStreamYoloLive
-from cam_acq.detection.gst_meta import LiveDetectionBridge
 from gxipy.gxidef import GxFrameStatusList, GxSwitchEntry
+
+import numpy as np
 
 
 @dataclass
