@@ -16,6 +16,7 @@ from cam_acq.camera.recovery import (
     _safe_unregister_offline,
     handle_offline,
     make_feature_backup_path,
+    reopen_camera_stream,
     register_offline_handler,
     save_feature_backup,
 )
@@ -186,9 +187,25 @@ def grab_loop_with_recovery(
                 )
                 if cam is None:
                     stats.open_error = stats.recovery.last_reconnect_error
-                    break
+                elif param_store is not None:
+                    param_store.requeue(endpoint.index)
+
+            if cam is None:
+                cam = reopen_camera_stream(
+                    endpoint.ip,
+                    offline,
+                    stats.recovery,
+                    feature_backup=backup,
+                    retry_interval_sec=retry_interval_sec,
+                    max_attempts=1,
+                )
+                if cam is None:
+                    time.sleep(retry_interval_sec)
+                    continue
                 if param_store is not None:
                     param_store.requeue(endpoint.index)
+                stats.open_error = None
+                continue
 
             if param_store is not None:
                 param_store.apply_if_requested(cam, endpoint.index)

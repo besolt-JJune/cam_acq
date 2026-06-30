@@ -1,7 +1,7 @@
 # GigE disconnect / reconnect 요구사항
 
 카메라 Ethernet 분리·재연결 시 **대시보드(live)** 와 **이벤트/수동 녹화** 동작을 정의한다.  
-구현 전 스펙; 현재 코드 상태와 갭을 §1에 명시.
+yolo-live·recording 통합 구현 및 3ch E2E 검증 완료 (2026-06-30); §1은 코드 기준 현재 상태.
 
 관련: `camera/recovery.py`, `11_field_pending_work.md` §2.3, `00_project_plan.md` Phase 2.3·T9.
 
@@ -11,11 +11,11 @@
 
 | 경로 | disconnect 감지 | 자동 재연결 | 비고 |
 |------|------------------|------------|------|
-| `grab_healthcheck --recovery` | ✅ offline callback | ✅ `grab_loop_with_recovery` | Phase 2.3 검증용 CLI |
-| `cam-acq-yolo-live` / dashboard | ⚠️ FPS·`open_error`로 offline 표시 가능 | ❌ `recording/grab.run_camera_grab_loop` — recovery 미연동 | grab 스레드 종료 후 수동 재시작 필요 |
-| `RecordingController` | ❌ | ❌ | disconnect 시 세그먼트 강제 종료·재개 없음 |
+| `grab_healthcheck --recovery` | ✅ offline callback + stall | ✅ `grab_loop_with_recovery` | CLI smoke |
+| `cam-acq-yolo-live` / dashboard | ✅ offline callback + stall | ✅ `run_camera_grab_loop_with_recovery` | reconnect 실패 시 grab 스레드 유지·재시도 |
+| `RecordingController` | ✅ `on_camera_offline` | ✅ `on_camera_reconnect` + 새 seg | `split.reason: gige_disconnect` on finalize |
 
-**갭:** `recovery.py`는 grab 전용으로 존재하나, **yolo-live + monitoring + recording** 통합 경로에 미연결.
+**E2E:** `11_field_pending_work.md` §2.3 PASS (3ch, 2026-06-30).
 
 ---
 

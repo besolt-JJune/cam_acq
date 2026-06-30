@@ -17,6 +17,7 @@ from cam_acq.camera.recovery import (
     handle_offline,
     make_feature_backup_path,
     register_offline_handler,
+    reopen_camera_stream,
     save_feature_backup,
 )
 from gxipy.gxidef import GxFrameStatusList, GxSwitchEntry
@@ -30,7 +31,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # ponytail: get_image(timeout=1000) × N ≈ stall seconds before forced reconnect path
-_GRAB_STALL_MISSES = 3
+_GRAB_STALL_MISSES = 5
 
 
 def _configure_continuous(cam: Any) -> None:
@@ -142,9 +143,24 @@ def run_camera_grab_loop_with_recovery(
         consecutive_miss = 0
         while time.monotonic() < stop_at:
 
-            def _process_offline() -> bool:
-                """Run disconnect hooks + IP reconnect; return False if reconnect failed."""
-                nonlocal cam, consecutive_miss
+            def _finish_reconnect() -> None:
+                if param_store is not None:
+                    param_store.requeue(camera_index)
+                reconnect_us = int(time.monotonic() * 1_000_000)
+                if controller is not None:
+                    controller.on_camera_reconnect(camera_index, at_host_us=reconnect_us)
+                if on_connection_offline is not None:
+                    on_connection_offline(False)
+                if on_recovery_cycle is not None:
+                    on_recovery_cycle()
+                logger.info(
+                    "gige recovery cam=%s offline_events=%s reconnect_success=%s",
+                    camera_index,
+                    recovery.offline_events,
+                    recovery.reconnect_success,
+                )
+
+            if offline.is_set():
                 at_us = int(time.monotonic() * 1_000_000)
                 offline_index = recovery.offline_events + 1
                 if on_connection_offline is not None:
@@ -165,32 +181,29 @@ def run_camera_grab_loop_with_recovery(
                     max_attempts=max_attempts,
                 )
                 consecutive_miss = 0
-                if cam is None:
-                    if errors is not None:
-                        errors.append(
-                            f"cam{camera_index}: {recovery.last_reconnect_error}"
-                        )
-                    return False
-                if param_store is not None:
-                    param_store.requeue(camera_index)
-                reconnect_us = int(time.monotonic() * 1_000_000)
-                if controller is not None:
-                    controller.on_camera_reconnect(camera_index, at_host_us=reconnect_us)
-                if on_connection_offline is not None:
-                    on_connection_offline(False)
-                if on_recovery_cycle is not None:
-                    on_recovery_cycle()
-                logger.info(
-                    "gige recovery cam=%s offline_events=%s reconnect_success=%s",
+                if cam is not None:
+                    _finish_reconnect()
+                    continue
+                logger.warning(
+                    "reconnect waiting cam=%s ip=%s (retry until device back)",
                     camera_index,
-                    recovery.offline_events,
-                    recovery.reconnect_success,
+                    ip,
                 )
-                return True
 
-            if offline.is_set():
-                if not _process_offline():
-                    break
+            if cam is None:
+                cam = reopen_camera_stream(
+                    ip,
+                    offline,
+                    recovery,
+                    feature_backup=backup,
+                    retry_interval_sec=retry_interval_sec,
+                    max_attempts=1,
+                )
+                if cam is None:
+                    time.sleep(retry_interval_sec)
+                    continue
+                _finish_reconnect()
+                continue
 
             if param_store is not None:
                 param_store.apply_if_requested(cam, camera_index)

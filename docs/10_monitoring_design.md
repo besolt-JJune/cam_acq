@@ -112,17 +112,17 @@ Dashboard 헤더 **Camera Settings** → 모달에서 online 채널만 선택, *
 | `GPU_TEMP_CRITICAL_C` | 90 | `gpu_temp_critical` → **FAIL** |
 | `STORAGE_FULL_PERCENTAGE` | 90 | `storage_high` |
 | `CROSS_CAMERA_SKEW_TOLERANCE_MS` | 50 | `timesync_skew` |
-| (암묵) | FPS &lt; 22 | `camera_fps_low` |
+| (암묵) | FPS &lt; 0.85× nominal (3ch headroom) | `camera_fps_low` |
 | | drop/incomplete &gt; 0 | `camera_drops` / `camera_incomplete` |
 | | offline | `camera_offline` |
 
-### 1.4 GigE disconnect / reconnect (요구사항 — 미구현)
+### 1.4 GigE disconnect / reconnect (구현됨)
 
-운영 스펙: `13_gige_disconnect_recovery.md` §3.
+운영 스펙: `13_gige_disconnect_recovery.md` §3. E2E: `11_field_pending_work.md` §2.3.
 
-- disconnect: `connection=offline`, 스트림 정지, `recovery_events++`
-- reconnect (프로세스 재시작 없이): `connection=online`, MJPEG·FPS 복구
-- yolo-live 경로는 현재 grab recovery **미연동** — offline 후 수동 재시작 필요
+- disconnect: `connection=offline`, `recovery_events++`, network 패널 recovery 카운터
+- reconnect (프로세스 재시작 없이): `connection=online`, MJPEG·FPS 복구, `reconnect_success++`
+- 녹화 중: `split.reason: gige_disconnect` on closed seg; reconnect 후 새 seg 파일
 
 ## 4. API
 

@@ -109,7 +109,7 @@
 | --- | -------------------------------------------------- |
 | 2.1 | 3대 IP(0-based) 오픈, 4ch NIC                         | **대기** — `11_field_pending_work.md` §2.1 |
 | 2.2 | TimeSyncManager (host clock + `TimestampReset` 세션 앵커) | ✅ `grab_healthcheck` 연동 |
-| 2.3 | GigE offline recovery (grab + **yolo-live·recording**) | ✅ callback (`recovery.py`) — **통합 미구현** → `13_gige_disconnect_recovery.md` |
+| 2.3 | GigE offline recovery (grab + **yolo-live·recording**) | ✅ E2E PASS (2026-06-30, 3ch) — `11_field_pending_work.md` §2.3, `13_gige_disconnect_recovery.md` |
 | 2.4 | `SetSocketBufferSize.sh` 적용                        | ✅ `socket_buffer_check` PASS (원격) |
 | 2.5 | 2대 PoC 병목 시 C grab 모듈 도입                           |
 | 2.6 | 1시간 soak test (`grab_healthcheck --duration 3600`) | ✅ 2대 PASS (22.98fps, drop 0) — 3대 재검증 대기 |
@@ -226,7 +226,7 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 | T6  | 메타데이터                      | `.json` + `.frames.jsonl` 유효성    |
 | T7  | FIFO_DELETE                | 오래된 파일부터 삭제                      |
 | T8  | FIFO_REJECT                | 임계치 이후 저장 거부                     |
-| T9  | 카메라 disconnect | dashboard 재연결 + recording disconnect split/resume — `13_gige_disconnect_recovery.md` |
+| T9  | 카메라 disconnect | ✅ dashboard 재연결 + recording `gige_disconnect` split (2026-06-30, 3ch) — `13_gige_disconnect_recovery.md` |
 | T10 | TimeSync drift             | 세션 앵커·timestamp offset 로그          |
 | T14 | Host metrics API           | CPU/RAM/GPU/온도 `/api/system/metrics` 유효 |
 | T11 | 전 채널 동시 trigger            | 3개 파일 동시 생성                      |

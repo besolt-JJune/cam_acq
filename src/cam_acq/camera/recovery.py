@@ -82,6 +82,47 @@ def _safe_unregister_offline(cam: Any) -> None:
         pass
 
 
+def reopen_camera_stream(
+    ip: str,
+    signal: OfflineSignal,
+    stats: RecoveryStats,
+    *,
+    feature_backup: Path | None,
+    retry_interval_sec: float = 2.0,
+    max_attempts: int = 5,
+) -> Any | None:
+    """Open camera by IP, register offline callback, stream_on (no teardown)."""
+    last_err: Exception | None = None
+    limit = max_attempts if max_attempts > 0 else None
+    attempt = 0
+    while limit is None or attempt < limit:
+        attempt += 1
+        try:
+            get_device_manager(refresh=True)
+            cam = open_camera_by_ip(ip)
+            _configure_continuous(cam)
+            if feature_backup is not None:
+                load_feature_backup(cam, feature_backup)
+            register_offline_handler(cam, signal)
+            cam.stream_on()
+            stats.reconnect_success += 1
+            stats.last_reconnect_error = None
+            return cam
+        except Exception as exc:
+            last_err = exc
+            logger.warning(
+                "reconnect attempt %s%s ip=%s err=%s",
+                attempt,
+                f"/{max_attempts}" if limit is not None else "",
+                ip,
+                exc,
+            )
+            time.sleep(retry_interval_sec)
+    stats.reconnect_failed += 1
+    stats.last_reconnect_error = str(last_err) if last_err else "reconnect failed"
+    return None
+
+
 def reconnect_camera(
     ip: str,
     *,
@@ -140,23 +181,21 @@ def handle_offline(
         _safe_unregister_offline(cam)
         close_camera(cam)
 
-    try:
-        new_cam = reconnect_camera(
+    new_cam = reopen_camera_stream(
+        ip,
+        signal,
+        stats,
+        feature_backup=feature_backup,
+        retry_interval_sec=retry_interval_sec,
+        max_attempts=max_attempts,
+    )
+    if new_cam is None:
+        logger.error(
+            "offline recovery failed ip=%s err=%s",
             ip,
-            feature_backup=feature_backup,
-            retry_interval_sec=retry_interval_sec,
-            max_attempts=max_attempts,
+            stats.last_reconnect_error,
         )
-        register_offline_handler(new_cam, signal)
-        new_cam.stream_on()
-        stats.reconnect_success += 1
-        stats.last_reconnect_error = None
-        return new_cam
-    except Exception as exc:
-        stats.reconnect_failed += 1
-        stats.last_reconnect_error = str(exc)
-        logger.error("offline recovery failed ip=%s err=%s", ip, exc)
-        return None
+    return new_cam
 
 
 def make_feature_backup_path(base_dir: Path, camera_index: int) -> Path:

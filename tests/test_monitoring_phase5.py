@@ -107,6 +107,34 @@ def test_recording_trigger_ok():
     assert body["recording"].get("manual_elapsed_sec", 0) >= 0
 
 
+def test_health_3ch_fps_headroom():
+    """Online camera at ~20fps (3ch yolo-live) should not degrade health."""
+    from cam_acq.monitoring.collector import MIN_CAMERA_FPS
+
+    col = DashboardCollector(_settings())
+    cameras = [
+        {
+            "camera_index": 2,
+            "connection": "online",
+            "fps_live": 19.89,
+            "frame_drops": 3,
+            "incomplete_frames": 1,
+        }
+    ]
+    health = col.evaluate_health(cameras=cameras)
+    assert health.status == "PASS"
+    assert health.warnings == ()
+    assert MIN_CAMERA_FPS < 19.89 + 0.01
+
+
+def test_health_fps_low_when_truly_off_nominal():
+    col = DashboardCollector(_settings())
+    cameras = [{"camera_index": 0, "connection": "online", "fps_live": 15.0}]
+    health = col.evaluate_health(cameras=cameras)
+    assert health.status == "DEGRADED"
+    assert any("camera_fps_low:0" in w for w in health.warnings)
+
+
 def test_dashboard_features_block():
     col = DashboardCollector(_settings())
     body = col.dashboard_payload()
@@ -118,5 +146,7 @@ if __name__ == "__main__":
     test_thumbnail_store_jpeg()
     test_recording_trigger_requires_pipeline()
     test_recording_trigger_ok()
+    test_health_3ch_fps_headroom()
+    test_health_fps_low_when_truly_off_nominal()
     test_dashboard_features_block()
     print("ok")

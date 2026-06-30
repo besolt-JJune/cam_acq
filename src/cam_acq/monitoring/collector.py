@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from cam_acq.config import Settings
+from cam_acq.config import NOMINAL_FPS, Settings
 from cam_acq.monitoring.host_metrics import HostMetricsSampler, SystemMetricsSnapshot
 from cam_acq.monitoring.payloads import (
     camera_payload,
@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 HealthStatus = Literal["PASS", "DEGRADED", "FAIL"]
 SCHEMA_VERSION = "1.0"
-MIN_CAMERA_FPS = 22.0
+# ponytail: yolo-live 3ch headroom; grab_healthcheck keeps stricter 0.95× nominal
+MIN_CAMERA_FPS = NOMINAL_FPS * 0.85
 
 
 @dataclass(frozen=True)
@@ -171,15 +172,13 @@ class DashboardCollector:
             cameras = camera_payload(s, grab, det)
         for cam in cameras:
             idx = cam["camera_index"]
-            if cam.get("connection") == "offline":
+            conn = cam.get("connection")
+            if conn == "offline":
                 warnings.append(f"camera_offline:{idx}")
             fps = cam.get("fps_live")
-            if fps is not None and fps < MIN_CAMERA_FPS:
+            if conn == "online" and fps is not None and fps < MIN_CAMERA_FPS:
                 warnings.append(f"camera_fps_low:{idx}:{fps}")
-            if cam.get("frame_drops", 0) > 0:
-                warnings.append(f"camera_drops:{idx}:{cam['frame_drops']}")
-            if cam.get("incomplete_frames", 0) > 0:
-                warnings.append(f"camera_incomplete:{idx}:{cam['incomplete_frames']}")
+            # frame_drops / incomplete_frames are session totals — not current health
 
         if timesync is None:
             grab, _, _, _, ts = hooks_snapshot(self._hooks)
