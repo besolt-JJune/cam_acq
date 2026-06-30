@@ -98,6 +98,8 @@ class RecordingController:
     _finalize_results: list[RecordedSegment] = field(default_factory=list, init=False)
     _finalize_errors: list[str] = field(default_factory=list, init=False)
     _finalize_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _op_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+    _time_sync: SessionTimeSync | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         cap = recording_ring_capacity_frames(
@@ -141,8 +143,8 @@ class RecordingController:
         bucket.append(event)
         return None
 
-    def _reset_session_encode_state(self) -> None:
-        """Drop open encoders without writing (only before a new session starts)."""
+    def _abort_open_segments(self) -> None:
+        """Drop open encoders without writing (incomplete session abort)."""
         for open_seg in list(self._open_segments.values()):
             try:
                 open_seg.frames_file.close()
@@ -152,11 +154,16 @@ class RecordingController:
                 open_seg.encoder.finalize()
             except Exception:
                 pass
-            if open_seg.video_path.exists():
+            if open_seg.video_path.exists() and open_seg.frame_count < 1:
                 open_seg.video_path.unlink(missing_ok=True)
-            open_seg.frames_path.unlink(missing_ok=True)
-            open_seg.session_path.unlink(missing_ok=True)
+            if open_seg.frame_count < 1:
+                open_seg.frames_path.unlink(missing_ok=True)
+                open_seg.session_path.unlink(missing_ok=True)
         self._open_segments.clear()
+
+    def _reset_session_encode_state(self) -> None:
+        """Abort open encoders and clear drain state (new session from idle)."""
+        self._abort_open_segments()
         self._pushed_watermark_us.clear()
         self._last_drained_frame_id.clear()
         self._last_drained_host_us.clear()
@@ -165,6 +172,31 @@ class RecordingController:
         self._finalize_errors.clear()
         for idx in self.camera_indices:
             self._ring_stats[idx] = RingCameraStats()
+
+    def _begin_session_watermark_light(self, decision: TriggerDecision) -> None:
+        """Re-anchor split timeline for manual override without aborting finalized event files."""
+        pre_us = int(self.buffer_sec * 1_000_000)
+        self._session_anchor_us = decision.started_at_host_us - pre_us
+        self._pushed_watermark_us.clear()
+        self._last_drained_frame_id.clear()
+        self._last_drained_host_us.clear()
+        if self._open_segments:
+            self._abort_open_segments()
+
+    def _finalize_all_open_segments(self, decision: TriggerDecision) -> None:
+        """Close in-flight NVENC segments before switching trigger (event → manual)."""
+        if not self._open_segments:
+            return
+        if self._time_sync is None:
+            self._abort_open_segments()
+            return
+        for camera_index in list(self._open_segments.keys()):
+            self._finalize_open_segment(
+                camera_index,
+                decision=decision,
+                time_sync=self._time_sync,
+                tick_frequency_hz=1_000_000_000,
+            )
 
     def _begin_session_watermark(self, decision: TriggerDecision) -> None:
         """Anchor split segments for a new recording session."""
@@ -183,29 +215,39 @@ class RecordingController:
 
     def apply_trigger_action(self, action: TriggerAction) -> None:
         """Apply schedule / extend / finalize from RecordingTrigger."""
-        if action.kind == "schedule":
-            if action.decision is None:
-                return
-            was_open = self._pending is not None
-            self.schedule_trigger(action.decision)
-            if was_open and action.decision.manual:
-                self._begin_session_watermark(action.decision)
-        elif action.kind == "extend_end":
-            if (
-                action.ended_at_host_us is None
-                or self._pending is None
-                or self._pending.manual
-            ):
-                return
-            self._pending = replace(
-                self._pending, ended_at_host_us=action.ended_at_host_us
-            )
-        elif action.kind == "finalize_end":
-            if action.ended_at_host_us is None or self._pending is None:
-                return
-            self._pending = replace(
-                self._pending, ended_at_host_us=action.ended_at_host_us
-            )
+        with self._op_lock:
+            if action.kind == "schedule":
+                if action.decision is None:
+                    return
+                was_open = self._pending is not None
+                prev = self._pending
+                replacing_event_with_manual = (
+                    was_open
+                    and action.decision.manual
+                    and prev is not None
+                    and not prev.manual
+                )
+                if replacing_event_with_manual:
+                    self._finalize_all_open_segments(prev)
+                self.schedule_trigger(action.decision)
+                if was_open and action.decision.manual:
+                    self._begin_session_watermark_light(action.decision)
+            elif action.kind == "extend_end":
+                if (
+                    action.ended_at_host_us is None
+                    or self._pending is None
+                    or self._pending.manual
+                ):
+                    return
+                self._pending = replace(
+                    self._pending, ended_at_host_us=action.ended_at_host_us
+                )
+            elif action.kind == "finalize_end":
+                if action.ended_at_host_us is None or self._pending is None:
+                    return
+                self._pending = replace(
+                    self._pending, ended_at_host_us=action.ended_at_host_us
+                )
 
     @property
     def session_active(self) -> bool:
@@ -227,23 +269,25 @@ class RecordingController:
         now_host_us: int | None = None,
     ) -> list[RecordedSegment]:
         """Drain ring into open segment encoders; finalize MP4 at each split boundary."""
-        if (
-            self._pending is None
-            or self._session_anchor_us is None
-            or self.pending_ready(now_host_us)
-        ):
-            return self._take_finalize_results()
-        now = int(time.monotonic() * 1_000_000) if now_host_us is None else now_host_us
-        for idx in self.camera_indices:
-            self.sample_ring_health(idx, host_us=now)
-        out = self._drain_rings(
-            up_to_us=now,
-            time_sync=time_sync,
-            tick_frequency_hz=tick_frequency_hz,
-            finalize_complete_segments=True,
-        )
-        out.extend(self._take_finalize_results())
-        return out
+        self._time_sync = time_sync
+        with self._op_lock:
+            if (
+                self._pending is None
+                or self._session_anchor_us is None
+                or self.pending_ready(now_host_us)
+            ):
+                return self._take_finalize_results()
+            now = int(time.monotonic() * 1_000_000) if now_host_us is None else now_host_us
+            for idx in self.camera_indices:
+                self.sample_ring_health(idx, host_us=now)
+            out = self._drain_rings(
+                up_to_us=now,
+                time_sync=time_sync,
+                tick_frequency_hz=tick_frequency_hz,
+                finalize_complete_segments=True,
+            )
+            out.extend(self._take_finalize_results())
+            return out
 
     def _take_finalize_results(self) -> list[RecordedSegment]:
         """Return segments whose background NVENC finalize completed."""
@@ -290,28 +334,30 @@ class RecordingController:
         tick_frequency_hz: int = 1_000_000_000,
     ) -> list[RecordedSegment]:
         """Drain remainder and finalize all open segment files."""
-        if self._pending is None:
-            return []
-        decision = self._pending
-        win_end = decision.ended_at_host_us
-        out = self._drain_rings(
-            up_to_us=win_end,
-            time_sync=time_sync,
-            tick_frequency_hz=tick_frequency_hz,
-            finalize_complete_segments=True,
-        )
-        for camera_index in list(self._open_segments.keys()):
-            self._finalize_open_segment(
-                camera_index,
-                decision=decision,
+        self._time_sync = time_sync
+        with self._op_lock:
+            if self._pending is None:
+                return []
+            decision = self._pending
+            win_end = decision.ended_at_host_us
+            out = self._drain_rings(
+                up_to_us=win_end,
                 time_sync=time_sync,
                 tick_frequency_hz=tick_frequency_hz,
+                finalize_complete_segments=True,
             )
-        self._pending = None
-        self._session_anchor_us = None
-        self._pushed_watermark_us.clear()
-        out.extend(self._take_finalize_results())
-        return out
+            for camera_index in list(self._open_segments.keys()):
+                self._finalize_open_segment(
+                    camera_index,
+                    decision=decision,
+                    time_sync=time_sync,
+                    tick_frequency_hz=tick_frequency_hz,
+                )
+            self._pending = None
+            self._session_anchor_us = None
+            self._pushed_watermark_us.clear()
+            out.extend(self._take_finalize_results())
+            return out
 
     def status_snapshot(self, *, manual_active: bool = False) -> dict[str, Any]:
         """Monitoring: idle | recording | post_buffer | ready_to_flush | encoding."""
@@ -494,6 +540,9 @@ class RecordingController:
         *,
         tick_frequency_hz: int,
     ) -> None:
+        """Append one frame; no-op if segment was replaced (event→manual race)."""
+        if self._open_segments.get(open_seg.camera_index) is not open_seg:
+            return
         open_seg.encoder.push_frames([frame])
         row = _frame_row(
             frame,

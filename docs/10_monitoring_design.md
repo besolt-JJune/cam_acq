@@ -16,7 +16,7 @@
 | 녹화 상태 | `RecordingController` + `RecordingTrigger` | `recording.state`, `manual_active`, `manual_elapsed_sec` | footer |
 | Storage (`STORAGE_PATH`) | `disk_usage_at` + `StorageManager` | `system.storage` | 시스템 패널 게이지 |
 | 활성 녹화 경로 | `StorageManager.location` | `system.storage.active_path` | 시스템 패널 |
-| 카메라 연결 | `GrabStats.open_error` / frames | `cameras[].connection` | online/offline/unknown |
+| 카메라 연결 | `GrabStats.open_error` / frames / `RecoveryStats` | `cameras[].connection`, `recovery_events` | online/offline/unknown |
 | Pre-buffer RAM | `RecordingController.memory_report()` 또는 추정 | `prebuffer.bytes_total` | 시스템 패널 |
 | TimeSync drift | `SessionTimeSync` + live tick spread | `timesync.live_max_skew_us` | NIC 패널 |
 
@@ -116,6 +116,14 @@ Dashboard 헤더 **Camera Settings** → 모달에서 online 채널만 선택, *
 | | drop/incomplete &gt; 0 | `camera_drops` / `camera_incomplete` |
 | | offline | `camera_offline` |
 
+### 1.4 GigE disconnect / reconnect (요구사항 — 미구현)
+
+운영 스펙: `13_gige_disconnect_recovery.md` §3.
+
+- disconnect: `connection=offline`, 스트림 정지, `recovery_events++`
+- reconnect (프로세스 재시작 없이): `connection=online`, MJPEG·FPS 복구
+- yolo-live 경로는 현재 grab recovery **미연동** — offline 후 수동 재시작 필요
+
 ## 4. API
 
 ### REST (구현됨)
@@ -207,5 +215,6 @@ curl -s localhost:8080/api/snapshot/0 -o /tmp/cam0.jpg && file /tmp/cam0.jpg
 ## 7. 관련 문서
 
 - `02_streaming_design.md` — FPS, 포트, 스트림
+- `13_gige_disconnect_recovery.md` — disconnect 시 dashboard·recording 동작 스펙
 - `08_ssh_healthcheck_guide.md` — 원격 검증
 - `00_project_plan.md` — Phase 5

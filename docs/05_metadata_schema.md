@@ -42,9 +42,11 @@
     "timestamp_reset_at_session": true
   },
   "split": {
+    "reason": "interval",
     "interval_sec": 60,
     "segment_start_host_us": 0,
-    "segment_end_host_us": 0
+    "segment_end_host_us": 0,
+    "offline_event_index": null
   },
   "storage": {
     "active_path": "/data/recordings",
@@ -64,6 +66,8 @@
 | `time_sync` | 세션 앵커 (`TimestampReset` + `host_t0`). PTP 미사용 |
 | `storage.active_path` | 실제 저장 경로 (`STORAGE_PATH` 또는 fallback `STORAGE_PATH_SUB`) |
 | `storage.is_fallback` | `true`이면 `STORAGE_PATH_SUB` 사용 중 |
+| `split.reason` | `interval` (시간 split) \| `gige_disconnect` (연결 끊김) — `13_gige_disconnect_recovery.md` §4.4 |
+| `split.offline_event_index` | disconnect split 시 `RecoveryStats.offline_events` (구현 후) |
 | `frames_file` | companion jsonl 경로 |
 
 ## 2. 프레임 메타 (`*.frames.jsonl`)

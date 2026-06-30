@@ -370,7 +370,8 @@ def run_live(
         on_detection=hooks.set_detection if hooks is not None else None,
     )
 
-    stop_at = time.monotonic() + duration_sec
+    # ponytail: duration_sec <= 0 runs until KeyboardInterrupt (Ctrl+C)
+    stop_at = float("inf") if duration_sec <= 0 else time.monotonic() + duration_sec
     grab_errors: list[str] = []
     threads = [
         threading.Thread(
@@ -631,10 +632,11 @@ def run_live(
             report["status"] = "FAIL"
             report["recording"]["grab_errors"] = grab_errors
 
-    min_pushed = int(duration_sec * NOMINAL_FPS * 0.8)
-    for cam in report["cameras"]:
-        if cam["frames_pushed"] < min_pushed:
-            report["status"] = "FAIL"
+    if duration_sec > 0:
+        min_pushed = int(duration_sec * NOMINAL_FPS * 0.8)
+        for cam in report["cameras"]:
+            if cam["frames_pushed"] < min_pushed:
+                report["status"] = "FAIL"
     if output_json:
         _write_json_report(output_json, report)
     print(json.dumps(report, indent=2))
@@ -644,7 +646,12 @@ def run_live(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Live GigE → DeepStream YOLO (2ch)")
     parser.add_argument("--env-file", type=Path, default=None)
-    parser.add_argument("--duration", type=float, default=30.0, help="seconds")
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=30.0,
+        help="run seconds; 0 = until Ctrl+C",
+    )
     parser.add_argument(
         "--record",
         type=Path,

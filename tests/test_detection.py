@@ -289,6 +289,102 @@ def test_manual_priority_case3_overrides_event():
   assert trig.on_detection(ev, host_recv_us=t0 + 6_000_000) is None
 
 
+def test_controller_manual_overrides_event_open_segment():
+  """Event NVENC open → manual start must not push to a finalized encoder."""
+  import time
+  from datetime import datetime, timezone
+  from unittest.mock import MagicMock, patch
+
+  from cam_acq.camera.timesync import CameraTimeAnchor, SessionTimeSync
+  from cam_acq.detection.events import TriggerAction, TriggerDecision
+  from cam_acq.recording.buffer import BufferedFrame
+  from cam_acq.recording.controller import RecordingController, _OpenSegmentEncode
+  from cam_acq.recording.storage import StorageManager
+
+  with tempfile.TemporaryDirectory() as tmp:
+    storage = StorageManager(Path(tmp), Path(tmp) / "sub")
+    ctrl = RecordingController(
+      storage=storage,
+      camera_indices=(0,),
+      buffer_sec=2.0,
+      split_interval_sec=300.0,
+      pixel_format="BayerRG8",
+      bayer_format="rggb",
+      codec="H265",
+      bitrate_bps=8_000_000,
+      gpu_id=0,
+    )
+    t0 = int(time.monotonic() * 1_000_000)
+    event = TriggerDecision(
+      trigger_type="human_detection",
+      source="auto",
+      started_at_host_us=t0,
+      ended_at_host_us=t0 + 20_000_000,
+      manual=False,
+      camera_indices=(0,),
+    )
+    ctrl.apply_trigger_action(TriggerAction(kind="schedule", decision=event))
+    enc = MagicMock()
+    enc.push_frames = MagicMock(return_value=1)
+    frame = BufferedFrame(
+      frame_id=1,
+      timestamp_tick=1000,
+      host_recv_us=t0 + 1_000_000,
+      width=100,
+      height=80,
+      data=b"\x00" * 8000,
+    )
+    paths = storage.segment_paths(
+      storage.make_basename(camera_index=0, segment_index=0, when=time.time())
+    )
+    open_seg = _OpenSegmentEncode(
+      camera_index=0,
+      segment_index=0,
+      seg_start_us=t0,
+      seg_end_us=t0 + 300_000_000,
+      encoder=enc,
+      video_path=paths["video"],
+      session_path=paths["session"],
+      frames_path=paths["frames"],
+      frames_file=paths["frames"].open("w", encoding="utf-8"),
+      width=100,
+      height=80,
+    )
+    ctrl._open_segments[0] = open_seg
+    ctrl._session_anchor_us = t0 - 2_000_000
+    ctrl._time_sync = SessionTimeSync(
+      strategy="host_clock_sync",
+      host_t0_monotonic=time.monotonic(),
+      host_t0_wall=datetime.now(timezone.utc).isoformat(),
+      timestamp_reset_on_session=False,
+      cross_camera_skew_tolerance_ms=50,
+      anchors=(
+        CameraTimeAnchor(
+          camera_index=0,
+          ip="10.0.0.1",
+          camera_ts0=0,
+          tick_frequency_hz=1_000_000_000,
+          reset_performed=False,
+        ),
+      ),
+    )
+    manual = TriggerDecision(
+      trigger_type="human_detection",
+      source="manual",
+      started_at_host_us=t0 + 5_000_000,
+      ended_at_host_us=t0 + 9_000_000_000_000_000,
+      manual=True,
+      camera_indices=(0,),
+    )
+    with patch.object(ctrl, "_finalize_open_segment") as fin:
+      ctrl.apply_trigger_action(TriggerAction(kind="schedule", decision=manual))
+      fin.assert_called_once()
+    assert ctrl._pending is manual
+    assert 0 not in ctrl._open_segments
+    ctrl._push_frame_to_open_segment(open_seg, frame, tick_frequency_hz=1_000_000_000)
+    enc.push_frames.assert_not_called()
+
+
 def test_controller_auto_cannot_override_manual_pending():
   from cam_acq.detection.events import TriggerDecision
   from cam_acq.recording.controller import RecordingController
@@ -354,5 +450,6 @@ if __name__ == "__main__":
   test_manual_start_stop_open_until_stop()
   test_manual_priority_case2_event_ignored_during_manual()
   test_manual_priority_case3_overrides_event()
+  test_controller_manual_overrides_event_open_segment()
   test_controller_auto_cannot_override_manual_pending()
   print("ok")
