@@ -367,10 +367,12 @@ jq '.detection' ./healthcheck/yolo_live.json
 
 현장 검증 체크리스트: `11_field_pending_work.md` §6
 
-- overlay person bbox — §6.2
-- `detection.trigger_events` — §6.3 (`RecordingTrigger` via nvinfer probe)
-- `DETECTION_CONFIDENCE` — §3.5
+- overlay person bbox — §6.2 ✅ (2026-06-30, `yolo_person_test.mp4`)
+- `detection.trigger_events` — §6.3 ✅ (`RecordingTrigger` via nvinfer probe)
+- pyds install — §6.1 ✅ (prebuilt wheel in `deepstream_python_apps/bindings/dist/`)
+- `DETECTION_CONFIDENCE` — §3.5 (0.5, 추가 튜닝 불필요)
 - person-only — §3.10 (`tests/test_detection.py`)
+- YOLO auto-trigger NVENC E2E — §6.7 (대기)
 
 
 

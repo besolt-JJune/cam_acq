@@ -122,16 +122,16 @@
 
 | ID  | 작업 | 코드 | 검증 (현장/테스트) |
 | --- | --------------------------------------- | --- | --- |
-| 3.1 | DeepStream multi-source 파이프라인 (**2ch**, live) | ✅ `cam-acq-yolo-live` | 추후 |
+| 3.1 | DeepStream multi-source 파이프라인 (**2ch**, live) | ✅ `cam-acq-yolo-live` | ✅ 2ch (2026-06-30) |
 | 3.2 | YOLOv8m → ONNX → TensorRT engine build (`batch=NUM_CAMERAS`) | ✅ | ✅ |
 | 3.3 | bbox 역변환 (resize → 원본 4K) | ✅ `bbox.py`, `events.py` | ✅ unit |
-| 3.4 | overlay 테스트 영상 저장 (live) | ✅ MP4 finalize·stride 수정 | 추후 육안 |
-| 3.5 | nvinfer meta → `RecordingTrigger` | ✅ `gst_meta.py` probe | 추후 (pyds + 사람) |
-| 3.6 | GPU debayer (Phase 3 경로) | ✅ `gpu_phase3` in yolo-live | `DEBAYER_MODE=gpu_phase3` |
+| 3.4 | overlay 테스트 영상 저장 (live) | ✅ MP4 finalize·stride 수정 | ✅ `yolo_person_test.mp4` |
+| 3.5 | nvinfer meta → `RecordingTrigger` | ✅ `gst_meta.py` probe | ✅ pyds + walk-through (`yolo_person_test.json`) |
+| 3.6 | GPU debayer (Phase 3 경로) | ✅ `gpu_phase3` in yolo-live | ✅ 2ch (`gpu_phase3`, 2026-06-30) |
 | 3.x | **3ch 전환** (`NUM_CAMERAS=3`) | **추후** | `11_field_pending_work.md` §5 |
 | 3.y | per-camera 혼합 debayer (GPU 2 + CPU 1) | **추후 선택** | `12_debayer_3ch_strategy.md` §4 — §5 실측 FAIL 시에만 |
 
-**Phase 3 코드 완료.** 남은 항목은 `11_field_pending_work.md` §6 현장 검증.
+**Phase 3 (2ch) 현장 검증 완료 (2026-06-30).** 남음: 3ch 전환(§5), §6.7 YOLO→NVENC E2E — `11_field_pending_work.md`.
 
 상세: `06_yolo_build_porting_guide.md`
 
