@@ -16,3 +16,4 @@ make -C "${DS_YOLO}/nvdsinfer_custom_impl_Yolo" clean
 make -C "${DS_YOLO}/nvdsinfer_custom_impl_Yolo"
 
 echo "Built: ${DS_YOLO}/nvdsinfer_custom_impl_Yolo/libnvdsinfer_custom_impl_Yolo.so"
+"${ROOT}/scripts/ensure_pyds_wheel.sh"

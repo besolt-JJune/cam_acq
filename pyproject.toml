@@ -3,7 +3,7 @@ name = "cam-acq"
 version = "0.1.0"
 description = "Multi-camera GigE acquisition, detection, and recording"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "python-dotenv>=1.0",
     "pillow>=10.0",
@@ -14,6 +14,17 @@ dependencies = [
     "psutil>=6.0",
     "nvidia-ml-py>=12.0",
     "typing_extensions>=4.12.0",
+    "pyds",
+]
+
+[project.optional-dependencies]
+# ONNX export (export_yoloV8.py); TensorRT build still needs trtexec on PATH.
+build-yolo = [
+    "ultralytics>=8.0",
+    "onnx>=1.16",
+    "onnxscript>=0.1",
+    "onnxslim>=0.1",
+    "torch>=2.0",
 ]
 
 [project.scripts]
@@ -40,3 +51,5 @@ where = ["src"]
 
 [tool.uv.sources]
 gxipy = { path = "sdk/Galaxy_camera/python/api", editable = true }
+# Run scripts/ensure_pyds_wheel.sh once (symlinks DS wheel → vendor/pyds-*.whl).
+pyds = { path = "vendor/pyds-1.2.3-cp312-cp312-linux_x86_64.whl" }

@@ -1,3 +1,5 @@
+# Reference template (batch-size/engine patched at runtime from NUM_CAMERAS).
+# Live pipeline: cam-acq-yolo-live writes configs/nvinfer/.generated/config_infer_primary_b{N}.txt
 [property]
 gpu-id=0
 net-scale-factor=0.0039215697906911373

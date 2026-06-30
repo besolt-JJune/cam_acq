@@ -157,14 +157,16 @@ DEBAYER_MODE=gpu_phase3 uv run cam-acq-yolo-live \
 
 ### 6.1 pyds 설치 (nvinfer probe) — ✅ 완료 (2026-06-30)
 
-DS 9는 pyds wheel 미동봉. venv에 설치:
+DS 9는 pyds wheel 미동봉. `uv sync` 후에도 유지되도록 pyproject에 포함:
 
 ```bash
-cd ~/works/cam_acq && source venv.sh
-# ponytail: bindings/dist 에 wheel 이미 있으면 재빌드 불필요
-uv pip install /opt/nvidia/deepstream/deepstream/sources/deepstream_python_apps/bindings/dist/pyds-*.whl
+cd ~/works/cam_acq
+./scripts/ensure_pyds_wheel.sh   # DS wheel → vendor/pyds-*.whl 심링크
+uv sync
 python3 -c "from cam_acq.detection.pyds_loader import import_pyds; import_pyds(); print('pyds OK')"
 ```
+
+`setup_deepstream_yolo.sh` 마지막에 `ensure_pyds_wheel.sh` 호출됨.
 
 wheel이 없을 때만 빌드 (`pip3 install build` 선행):
 
@@ -172,7 +174,7 @@ wheel이 없을 때만 빌드 (`pip3 install build` 선행):
 cd /opt/nvidia/deepstream/deepstream/sources/deepstream_python_apps/bindings
 export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
 python3 -m build
-uv pip install dist/pyds-*.whl
+./scripts/ensure_pyds_wheel.sh && uv sync
 ```
 
 **PASS:** `cam-acq-yolo-live` JSON에 `detection.pyds_warning` 없음.

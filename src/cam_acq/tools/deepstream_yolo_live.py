@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live 2ch GigE → DeepStream YOLO (appsrc) with optional overlay MP4 and event recording."""
+"""Live N-ch GigE → DeepStream YOLO (appsrc) with optional overlay MP4 and event recording."""
 
 from __future__ import annotations
 
@@ -28,7 +28,9 @@ from cam_acq.camera.timesync import (
     reset_timestamp_on_open_cam,
 )
 from cam_acq.config import NOMINAL_FPS, load_settings, project_root, setup_galaxy_lib_path
+from cam_acq.detection.artifacts import validate_detection_engine
 from cam_acq.detection.events import RecordingTrigger
+from cam_acq.detection.nvinfer_config import write_nvinfer_config
 from cam_acq.recording.controller import RecordedSegment, RecordingController
 from cam_acq.recording.grab import run_camera_grab_loop
 from cam_acq.recording.storage import StorageManager
@@ -245,15 +247,15 @@ def run_live(
     """
     settings = load_settings(env_file)
     root = project_root()
-    nvinfer = root / "configs" / "nvinfer" / "config_infer_primary_yolo.txt"
-    if not nvinfer.is_file():
-        print(f"Missing nvinfer config: {nvinfer}", file=sys.stderr)
+    try:
+        engine = validate_detection_engine(settings, root)
+    except (FileNotFoundError, ValueError) as exc:
+        print(exc, file=sys.stderr)
         return 1
-    engine = settings.detection_model_path
-    if not engine.is_absolute():
-        engine = root / engine
-    if not engine.is_file():
-        print(f"Missing TensorRT engine: {engine} (run cam-acq-build-yolo)", file=sys.stderr)
+    try:
+        nvinfer = write_nvinfer_config(settings, root=root)
+    except FileNotFoundError as exc:
+        print(exc, file=sys.stderr)
         return 1
 
     if settings.debayer_backend not in (

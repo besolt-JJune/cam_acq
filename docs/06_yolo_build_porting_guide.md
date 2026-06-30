@@ -20,7 +20,7 @@
 ### 2.1 의존성
 
 ```bash
-uv pip install ultralytics onnx onnxsim
+uv sync --extra build-yolo
 ```
 
 ### 2.2 ONNX export

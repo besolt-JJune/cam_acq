@@ -29,6 +29,7 @@ cmake-build-*/
 
 # Third-party (cloned by scripts/setup_deepstream_yolo.sh)
 third_party/DeepStream-Yolo/
+vendor/pyds-*.whl
 models/*.engine
 models/*.onnx
 models/*.pt
@@ -45,6 +46,7 @@ recordings/
 
 # Logs & healthcheck output
 healthcheck/
+configs/nvinfer/.generated/
 logs/
 samples/
 *.log

@@ -10,31 +10,11 @@ import sys
 from pathlib import Path
 
 from cam_acq.config import load_settings, project_root
-
-# COCO head is always 80 classes; "person" variant only changes output filenames.
-VARIANT_COCO = "coco"
-VARIANT_PERSON = "person"
-
-
-def detection_artifact_paths(
-    *,
-    variant: str,
-    batch_size: int,
-    gpu_id: int,
-    root: Path | None = None,
-) -> tuple[Path, Path]:
-    """Return (onnx_path, engine_path) for coco vs person-only deployment naming."""
-    base = root or project_root()
-    models = base / "models"
-    if variant == VARIANT_PERSON:
-        onnx = models / "yolov8m_person.onnx"
-        engine = models / f"yolov8m_person_b{batch_size}_gpu{gpu_id}_fp16.engine"
-    elif variant == VARIANT_COCO:
-        onnx = models / "yolov8m.onnx"
-        engine = models / f"yolov8m_b{batch_size}_gpu{gpu_id}_fp16.engine"
-    else:
-        raise ValueError(f"unknown variant: {variant!r} (use {VARIANT_PERSON!r} or {VARIANT_COCO!r})")
-    return onnx, engine
+from cam_acq.detection.artifacts import (
+    VARIANT_COCO,
+    VARIANT_PERSON,
+    detection_artifact_paths,
+)
 
 
 def _find_trtexec() -> Path | None:
@@ -105,6 +85,23 @@ def build_engine(
     return engine_path
 
 
+def _require_export_deps() -> None:
+    """Fail fast when build-yolo optional deps are not installed."""
+    missing: list[str] = []
+    for mod in ("onnx", "torch", "ultralytics"):
+        try:
+            __import__(mod)
+        except ImportError:
+            missing.append(mod)
+    if missing:
+        print(
+            f"Missing packages for YOLO ONNX export: {', '.join(missing)}\n"
+            "Run: uv sync --extra build-yolo",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build YOLOv8m ONNX + TensorRT engine")
     parser.add_argument("--env-file", type=Path, default=None)
@@ -119,6 +116,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    _require_export_deps()
     settings = load_settings(args.env_file)
     batch = args.batch_size if args.batch_size is not None else settings.num_cameras
     root = project_root()

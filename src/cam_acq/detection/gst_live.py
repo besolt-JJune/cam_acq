@@ -23,6 +23,7 @@ import numpy as np
 
 from cam_acq.detection.gst_meta import LiveDetectionBridge, attach_nvinfer_detection_probe
 from cam_acq.detection.gst_thumb import attach_resize_thumbnail_probe
+from cam_acq.detection.nvinfer_config import tiler_layout
 
 
 def _ensure_gst_plugins() -> None:
@@ -179,10 +180,11 @@ class DeepStreamYoloLive:
         osd = Gst.ElementFactory.make("nvdsosd", "osd")
         if tiler is None or osd is None:
             raise RuntimeError("nvmultistreamtiler/nvdsosd not available")
-        tiler.set_property("rows", 1)
-        tiler.set_property("columns", num_cameras)
-        tiler.set_property("width", width * num_cameras if num_cameras > 1 else width)
-        tiler.set_property("height", height)
+        tiler_rows, tiler_cols = tiler_layout(num_cameras)
+        tiler.set_property("rows", tiler_rows)
+        tiler.set_property("columns", tiler_cols)
+        tiler.set_property("width", width * tiler_cols)
+        tiler.set_property("height", height * tiler_rows)
         tiler.set_property("gpu-id", gpu_id)
         osd.set_property("gpu-id", gpu_id)
         self.pipeline.add(tiler)

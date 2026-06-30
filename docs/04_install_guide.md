@@ -120,9 +120,9 @@ uv run cam-acq-healthcheck --duration 60
 Phase 3에서 수행. 요약:
 
 ```bash
-uv pip install ultralytics onnx onnxsim
-yolo export model=yolov8m.pt format=onnx imgsz=640 simplify=True
-trtexec --onnx=yolov8m.onnx --saveEngine=models/yolov8m_person.engine --fp16
+uv sync --extra build-yolo
+uv run cam-acq-build-yolo --batch-size 3   # NUM_CAMERAS와 동일
+```
 ```
 
 상세: `06_yolo_build_porting_guide.md`
