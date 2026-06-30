@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cam_acq.camera.device import close_camera, open_camera_by_ip
 from cam_acq.camera.frame import DebayerBackend, BayerFrame, raw_image_to_bayer_frame, raw_image_to_frame
@@ -29,6 +29,7 @@ def run_camera_grab_loop(
     debayer_backend: DebayerBackend = DebayerBackend.CPU_SDK,
     bayer_format: str = "RGGB",
     param_store: RuntimeParamStore | None = None,
+    on_camera_open: Callable[[Any, int], None] | None = None,
     errors: list[str] | None = None,
 ) -> None:
     """Grab from one camera; push Bayer to ring and/or deliver RGB or Bayer for detection."""
@@ -38,6 +39,8 @@ def run_camera_grab_loop(
     try:
         cam = open_camera_by_ip(ip)
         cam.TriggerMode.set(GxSwitchEntry.OFF)
+        if on_camera_open is not None:
+            on_camera_open(cam, camera_index)
         if param_store is not None:
             param_store.on_camera_open(cam, camera_index)
         cam.stream_on()

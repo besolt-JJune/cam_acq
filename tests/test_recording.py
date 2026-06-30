@@ -46,10 +46,10 @@ def test_basename_same_timestamp_across_cameras():
         b0 = sm.make_basename(camera_index=0, segment_index=0, when=when)
         b1 = sm.make_basename(camera_index=1, segment_index=0, when=when)
         assert b0.partition("_cam")[0] == b1.partition("_cam")[0]
-        assert b0.endswith("_cam0_seg00")
-        assert b1.endswith("_cam1_seg00")
+        assert b0.endswith("_cam0_seg0000")
+        assert b1.endswith("_cam1_seg0000")
         manual = sm.make_basename(camera_index=0, segment_index=0, when=when, manual=True)
-        assert manual.endswith("_cam0_seg00_manual")
+        assert manual.endswith("_cam0_seg0000_manual")
 
 
 def test_storage_fifo_cleanup_api():
@@ -169,8 +169,76 @@ def test_encode_bayer_mp4_optional():
         assert out.stat().st_size > 1000
 
 
+def test_manual_record_stop_at_sec():
+    """Default stop leaves encode margin; explicit override is honored."""
+    from cam_acq.tools.deepstream_yolo_live import manual_record_stop_at_sec
+
+    assert manual_record_stop_at_sec(duration_sec=60.0, explicit=None) == 55.0
+    assert manual_record_stop_at_sec(duration_sec=10.0, explicit=None) == 5.0
+    assert manual_record_stop_at_sec(duration_sec=60.0, explicit=40.0) == 40.0
+
+
+def test_split_segments_in_host_window():
+    """Segment indices follow RECORDING_SPLIT_INTERVAL_SEC from session anchor."""
+    from cam_acq.recording.buffer import split_segments_in_host_window
+
+    anchor = 1_000_000
+    split = 60.0
+    segs = split_segments_in_host_window(
+        anchor_us=anchor,
+        range_start_us=anchor + 50_000_000,
+        range_end_us=anchor + 130_000_000,
+        split_interval_sec=split,
+    )
+    assert segs == [
+        (0, anchor + 50_000_000, anchor + 60_000_000),
+        (1, anchor + 60_000_000, anchor + 120_000_000),
+        (2, anchor + 120_000_000, anchor + 130_000_000),
+    ]
+
+
+def test_incremental_flush_chunk_sec():
+    """Long split uses small ring + chunk flush (buffer=2, split=300)."""
+    from cam_acq.recording.buffer import incremental_flush_chunk_sec, recording_ring_capacity_frames
+
+    cap = recording_ring_capacity_frames(23.0, 2.0, 300.0)
+    assert cap == ring_capacity_frames(23.0, 2.0)
+    chunk = incremental_flush_chunk_sec(23.0, 2.0, 300.0)
+    assert 1.0 <= chunk <= cap / 23.0
+
+
+def test_ring_overflow_counted():
+    """When ring is full, push evicts oldest and increments overflow_drops."""
+    buf = BayerRingBuffer(3)
+    for i in range(5):
+        buf.push(
+            BufferedFrame(
+                frame_id=i,
+                timestamp_tick=i,
+                host_recv_us=i * 1_000_000,
+                width=2,
+                height=2,
+                data=bytes([i]),
+            )
+        )
+    assert buf.push_total == 5
+    assert buf.overflow_drops == 2
+    assert [f.frame_id for f in buf.frames_in_host_window(0, 10_000_000)] == [2, 3, 4]
+
+
+def test_segment_index_at():
+    """Split index follows anchor + RECORDING_SPLIT_INTERVAL_SEC."""
+    from cam_acq.recording.buffer import segment_bounds_us, segment_index_at
+
+    anchor = 1_000_000
+    assert segment_index_at(anchor, anchor + 50_000_000, 60.0) == 0
+    assert segment_index_at(anchor, anchor + 60_000_000, 60.0) == 1
+    assert segment_bounds_us(anchor, 1, 60.0) == (anchor + 60_000_000, anchor + 120_000_000)
+
+
 if __name__ == "__main__":
     test_ring_window()
+    test_ring_overflow_counted()
     test_ring_capacity_formula()
     test_storage_fallback()
     test_basename_same_timestamp_across_cameras()
@@ -180,4 +248,8 @@ if __name__ == "__main__":
     test_memory_profile_schedule()
     test_peak_summary()
     test_encode_bayer_mp4_optional()
+    test_manual_record_stop_at_sec()
+    test_split_segments_in_host_window()
+    test_incremental_flush_chunk_sec()
+    test_segment_index_at()
     print("ok")

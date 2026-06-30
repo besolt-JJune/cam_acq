@@ -16,7 +16,13 @@ from cam_acq.detection.gst_live import DeepStreamYoloLive  # noqa: F401 — gi b
 from cam_acq.camera.timesync import TimeSyncManager
 from cam_acq.config import NOMINAL_FPS, load_settings, setup_galaxy_lib_path
 from cam_acq.detection.events import TriggerDecision
-from cam_acq.recording.buffer import BayerRingBuffer, ring_capacity_frames
+from cam_acq.recording.buffer import (
+    BayerRingBuffer,
+    incremental_flush_chunk_sec,
+    recording_ring_capacity_frames,
+    ring_capacity_frames,
+    split_segments_in_host_window,
+)
 from cam_acq.recording.controller import RecordingController
 from cam_acq.recording.grab import run_camera_grab_loop
 from cam_acq.recording.gst_encode import encode_bayer_frames_to_mp4
@@ -35,10 +41,7 @@ def codec_profile_schedule(
 
 def _profile_ring_capacity(fps: float, buffer_sec: float, split_interval_sec: float) -> int:
     """Ring must cover pre + event + post; capped by what RAM can retain at full Bayer."""
-    ring_sec = buffer_sec * 2 + split_interval_sec
-    return ring_capacity_frames(fps, buffer_sec) if ring_sec > buffer_sec * 3 else max(
-        1, int(fps * ring_sec) + 5
-    )
+    return recording_ring_capacity_frames(fps, buffer_sec, split_interval_sec)
 
 
 def _safe_flush_chunk_sec(ring_retention_sec: float, buffer_sec: float) -> float:
@@ -103,17 +106,16 @@ def _split_frame_segments(
     split_interval_sec: float,
 ) -> list[tuple[int, list]]:
     """Mirror RecordingController segment boundaries for profile encodes."""
-    split_us = int(split_interval_sec * 1_000_000)
     segments: list[tuple[int, list]] = []
-    seg_idx = 0
-    t = win_start_us
-    while t < win_end_us:
-        seg_end = min(t + split_us, win_end_us)
-        seg_frames = [f for f in frames if t <= f.host_recv_us <= seg_end]
+    for seg_idx, seg_start, seg_end in split_segments_in_host_window(
+        anchor_us=win_start_us,
+        range_start_us=win_start_us,
+        range_end_us=win_end_us,
+        split_interval_sec=split_interval_sec,
+    ):
+        seg_frames = [f for f in frames if seg_start <= f.host_recv_us <= seg_end]
         if seg_frames:
             segments.append((seg_idx, seg_frames))
-            seg_idx += 1
-        t = seg_end
     return segments
 
 
@@ -312,7 +314,7 @@ def run_codec_profile(
             out = (
                 output_dir
                 / f"{stamp}_cam{camera_index}_{codec}_{int(bitrate_mbps)}mbps"
-                f"_seg{split_seg:02d}_c{chunk_seq:04d}.mp4"
+                f"_seg{split_seg:04d}_c{chunk_seq:04d}.mp4"
             )
             profile = _encode_profile(
                 chunk_frames,

@@ -167,6 +167,9 @@ def run_memory_profile(
             manual_stopped = True
             phase = "trigger_post_buffer"
 
+        if controller.session_active:
+            controller.maybe_flush_incremental(time_sync=time_sync)
+
         if manual_stopped and controller.pending_ready() and phase != "encoding":
             phase = "encoding"
             encode_sample = _sample_dict(sampler)
@@ -190,9 +193,14 @@ def run_memory_profile(
     ring_measured = controller.memory_report()
     cap = ring_capacity_frames(NOMINAL_FPS, settings.recording_buffer_sec)
 
+    ring_stats = controller.ring_stats_report()
     report = {
         "schema_version": "1.0",
-        "status": "PASS" if ring_measured and not errors else "FAIL",
+        "status": (
+            "PASS"
+            if ring_measured and not errors and ring_stats.get("healthy", True)
+            else "FAIL"
+        ),
         "phase": "4.9_memory_profile",
         "num_cameras": settings.num_cameras,
         "duration_sec": duration_sec,
@@ -204,6 +212,7 @@ def run_memory_profile(
         "prebuffer": prebuffer,
         "ring_memory_bytes": ring_measured,
         "ring_memory_bytes_total": sum(ring_measured.values()),
+        "ring_stats": ring_stats,
         "peaks": peaks,
         "encode_triggered": decision is not None,
         "segments_written": len(segments),

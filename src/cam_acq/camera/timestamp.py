@@ -111,24 +111,28 @@ def probe_timestamp_readonly(endpoint: CameraEndpoint) -> TimestampCameraReport:
 
 
 def reset_camera_timestamp(endpoint: CameraEndpoint) -> TimestampCameraReport:
-    """Latch counter, TimestampReset, latch again; record before/after values."""
-    report = probe_timestamp_readonly(endpoint)
-    if report.open_error:
-        return report
-    if not report.implemented.get("TimestampReset"):
-        report.reset_error = "TimestampReset not implemented"
-        return report
-
+    """Latch counter, TimestampReset, latch again; single open (no probe reopen)."""
+    report = TimestampCameraReport(camera_index=endpoint.index, ip=endpoint.ip)
     cam = None
     try:
         cam = open_camera_by_ip(endpoint.ip)
         fc = cam.get_remote_device_feature_control()
+        for name in TIMESTAMP_FEATURES:
+            report.implemented[name] = _feature_implemented(cam, fc, name)
+            report.readable[name] = _feature_readable(cam, fc, name)
+        report.tick_frequency_hz = _read_tick_frequency(cam, fc)
+        if not report.implemented.get("TimestampReset"):
+            report.reset_error = "TimestampReset not implemented"
+            report.timestamp_before = _latch_timestamp(cam, fc)
+            return report
         report.timestamp_before = _latch_timestamp(cam, fc)
         _send_timestamp_reset(cam, fc)
         report.timestamp_after = _latch_timestamp(cam, fc)
         report.reset_performed = True
     except Exception as exc:
-        report.reset_error = str(exc)
+        report.open_error = str(exc) if cam is None else None
+        if cam is not None:
+            report.reset_error = str(exc)
     finally:
         close_camera(cam)
     return report

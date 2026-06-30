@@ -146,7 +146,7 @@ class StorageManager:
     ) -> str:
         """Timestamped basename without extension; ``when`` is POSIX epoch seconds (shared across cameras)."""
         ts = datetime.fromtimestamp(when or time.time()).strftime("%Y%m%d_%H%M%S")
-        base = f"{ts}_cam{camera_index}_seg{segment_index:02d}"
+        base = f"{ts}_cam{camera_index}_seg{segment_index:04d}"
         if manual:
             base += "_manual"
         return base

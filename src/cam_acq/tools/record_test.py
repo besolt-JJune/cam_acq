@@ -130,6 +130,8 @@ def run_record_test(
         if decision is not None and not manual_stopped and now >= stop_manual_at:
             controller.apply_trigger_action(trigger.manual_stop())
             manual_stopped = True
+        if controller.session_active:
+            controller.maybe_flush_incremental(time_sync=time_sync)
         if manual_stopped and controller.pending_ready():
             break
         time.sleep(0.05)
@@ -142,9 +144,10 @@ def run_record_test(
     if errors:
         print("\n".join(errors), file=sys.stderr)
 
+    ring_stats = controller.ring_stats_report()
     report = {
         "schema_version": "1.0",
-        "status": "PASS" if segments and not errors else "FAIL",
+        "status": "PASS" if segments and not errors and ring_stats.get("healthy", True) else "FAIL",
         "duration_sec": duration_sec,
         "trigger_at_sec": trigger_at_sec,
         "buffer_sec": settings.recording_buffer_sec,
@@ -157,6 +160,7 @@ def run_record_test(
             "usage_ratio": round(storage.usage_ratio(), 4),
         },
         "ring_memory_bytes": controller.memory_report(),
+        "ring_stats": ring_stats,
         "segments": [
             {
                 "camera_index": s.camera_index,

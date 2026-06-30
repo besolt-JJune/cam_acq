@@ -28,16 +28,25 @@ def get_device_manager(*, refresh: bool = True) -> Any:
         return _ensure_device_manager(refresh=refresh)
 
 
-def open_camera_by_ip(ip: str, access_mode: int = GxAccessMode.CONTROL) -> Any:
+def open_camera_by_ip(
+    ip: str,
+    access_mode: int = GxAccessMode.CONTROL,
+    *,
+    refresh: bool | None = None,
+) -> Any:
     """Open GEV camera by IP after refreshing the device/interface list.
 
     gxipy's open_device_by_ip does not call update_device_list(); without it
     __interface_info_list stays empty and __create_device raises IndexError.
 
-    Uses one shared DeviceManager: parallel threads must not each init the C API.
+    Uses one shared DeviceManager. ``refresh`` defaults to True only on the
+    first init; parallel grab threads must not refresh while another camera
+    is open (gx_update_device_list is not re-entrant).
     """
     with _dm_lock:
-        dm = _ensure_device_manager(refresh=True)
+        if refresh is None:
+            refresh = _dm is None
+        dm = _ensure_device_manager(refresh=refresh)
         cam = dm.open_device_by_ip(ip, access_mode)
     cam._cam_acq_device_manager = dm
     return cam

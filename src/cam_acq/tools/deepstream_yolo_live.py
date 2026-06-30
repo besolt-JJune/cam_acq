@@ -8,9 +8,11 @@ import json
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 # gi (via gst_live) must load before numpy (frame/gst_live use numpy after gi init)
 from cam_acq.detection.gst_live import DeepStreamYoloLive
@@ -19,7 +21,12 @@ from cam_acq.detection.gst_meta import LiveDetectionBridge
 from cam_acq.camera.frame import BayerFrame, DebayerBackend
 from cam_acq.camera.bayer import gst_format_from_bayer_format
 from cam_acq.camera.param_store import RuntimeParamStore
-from cam_acq.camera.timesync import SessionTimeSync, TimeSyncManager
+from cam_acq.camera.timesync import (
+    CameraTimeAnchor,
+    SessionTimeSync,
+    TimeSyncManager,
+    reset_timestamp_on_open_cam,
+)
 from cam_acq.config import NOMINAL_FPS, load_settings, project_root, setup_galaxy_lib_path
 from cam_acq.detection.events import RecordingTrigger
 from cam_acq.recording.controller import RecordedSegment, RecordingController
@@ -116,6 +123,7 @@ def _grab_thread(
     debayer_backend: DebayerBackend,
     bayer_format: str,
     param_store: RuntimeParamStore | None,
+    on_camera_open: Callable[[Any, int], None] | None,
     errors: list[str],
 ) -> None:
     """One camera: Bayer ring (optional) + latest frame for DeepStream (RGB or Bayer)."""
@@ -142,6 +150,7 @@ def _grab_thread(
             debayer_backend=debayer_backend,
             bayer_format=bayer_format,
             param_store=param_store,
+            on_camera_open=on_camera_open,
             errors=errors,
         )
     except Exception as exc:
@@ -160,6 +169,48 @@ def _segments_to_report(segments: list[RecordedSegment]) -> list[dict]:
         }
         for s in segments
     ]
+
+
+def manual_record_stop_at_sec(*, duration_sec: float, explicit: float | None) -> float:
+    """Seconds from session start to fire manual_stop (--record-from-start; leaves encode margin)."""
+    if explicit is not None:
+        return explicit
+    return max(3.0, duration_sec - 5.0)
+
+
+def _time_sync_report(
+    time_sync: SessionTimeSync,
+    camera_anchors: dict[int, CameraTimeAnchor],
+) -> dict:
+    """Session time sync JSON; merge grab-thread anchors when deferred reset was used."""
+    ts = time_sync.to_dict()
+    if not camera_anchors:
+        return ts
+    ts["cameras"] = [
+        {
+            "camera_index": a.camera_index,
+            "ip": a.ip,
+            "camera_ts0": a.camera_ts0,
+            "camera_ts0_us": a.camera_ts0_us,
+            "tick_frequency_hz": a.tick_frequency_hz,
+            "reset_performed": a.reset_performed,
+            "reset_error": a.reset_error,
+        }
+        for idx in sorted(camera_anchors)
+        for a in (camera_anchors[idx],)
+    ]
+    us_vals = [a.camera_ts0_us for a in camera_anchors.values() if a.camera_ts0_us is not None]
+    if len(us_vals) >= 2:
+        ts["max_cross_camera_skew_us"] = max(us_vals) - min(us_vals)
+    return ts
+
+
+def _write_json_report(output_json: Path | None, report: dict) -> None:
+    """Persist healthcheck JSON when path is set."""
+    if output_json is None:
+        return
+    output_json.parent.mkdir(parents=True, exist_ok=True)
+    output_json.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
 def _flush_ready_segments(
@@ -184,8 +235,14 @@ def run_live(
     output_json: Path | None,
     event_recording: bool,
     with_monitoring: bool = False,
+    record_from_start: bool = False,
+    record_stop_at_sec: float | None = None,
 ) -> int:
-    """Grab from configured cameras, run YOLO, optionally NVENC on person trigger."""
+    """Grab from configured cameras, run YOLO, optionally NVENC on person trigger.
+
+    When ``record_from_start``, manual recording opens at pipeline start (no detection
+    trigger). Use with ``--no-event-recording`` for soak / split / FIFO field tests.
+    """
     settings = load_settings(env_file)
     root = project_root()
     nvinfer = root / "configs" / "nvinfer" / "config_infer_primary_yolo.txt"
@@ -210,7 +267,22 @@ def run_live(
         return 1
 
     use_gpu_debayer = settings.debayer_backend == DebayerBackend.GPU_PHASE3
-    need_recording = event_recording or with_monitoring
+    need_recording = event_recording or with_monitoring or record_from_start
+    stop_manual_at_sec = manual_record_stop_at_sec(
+        duration_sec=duration_sec,
+        explicit=record_stop_at_sec,
+    )
+    if record_from_start and duration_sec < stop_manual_at_sec + 1.0:
+        print(
+            "duration must exceed --record-stop-at (+ encode margin) when --record-from-start",
+            file=sys.stderr,
+        )
+        return 1
+
+    _write_json_report(
+        output_json,
+        {"schema_version": "1.0", "status": "running", "phase": "init"},
+    )
 
     storage: StorageManager | None = None
     controller: RecordingController | None = None
@@ -237,8 +309,18 @@ def run_live(
         )
         time_sync = TimeSyncManager().begin_session(
             settings.cameras,
-            timestamp_reset=settings.timestamp_reset_on_session,
+            timestamp_reset=False,
         )
+
+    endpoints_by_idx = {ep.index: ep for ep in settings.cameras}
+    camera_anchors: dict[int, CameraTimeAnchor] = {}
+
+    def on_camera_open(cam: Any, camera_index: int) -> None:
+        """TimestampReset on grab open (avoids pre-grab double open)."""
+        if settings.timestamp_reset_on_session:
+            camera_anchors[camera_index] = reset_timestamp_on_open_cam(
+                cam, endpoints_by_idx[camera_index]
+            )
 
     trigger = RecordingTrigger(
         buffer_sec=settings.recording_buffer_sec,
@@ -303,6 +385,7 @@ def run_live(
                 "debayer_backend": settings.debayer_backend,
                 "bayer_format": settings.bayer_format,
                 "param_store": param_store,
+                "on_camera_open": on_camera_open,
                 "errors": grab_errors,
             },
             daemon=True,
@@ -315,6 +398,21 @@ def run_live(
     for st in stats_list:
         if st.open_error:
             print(f"cam{st.camera_index} open failed: {st.open_error}", file=sys.stderr)
+            fail_report = {
+                "schema_version": "1.0",
+                "status": "FAIL",
+                "exit_reason": "camera_open_failed",
+                "cameras": [
+                    {
+                        "camera_index": s.camera_index,
+                        "ip": s.ip,
+                        "open_error": s.open_error,
+                    }
+                    for s in stats_list
+                ],
+            }
+            _write_json_report(output_json, fail_report)
+            print(json.dumps(fail_report, indent=2))
             return 1
 
     pipeline = DeepStreamYoloLive(
@@ -335,6 +433,13 @@ def run_live(
     pipeline.start()
     started_wall = time.time()
     started = time.monotonic()
+    stop_manual_at = started + stop_manual_at_sec
+    manual_recording_stopped = False
+    manual_decision = None
+    if record_from_start and controller is not None:
+        action = trigger.manual_start()
+        controller.apply_trigger_action(action)
+        manual_decision = action.decision
     push_errors = 0
     last_hook_sync = 0.0
     try:
@@ -395,7 +500,19 @@ def run_live(
             if err:
                 print(f"pipeline error: {err}", file=sys.stderr)
                 return 1
+            if (
+                record_from_start
+                and controller is not None
+                and not manual_recording_stopped
+                and time.monotonic() >= stop_manual_at
+            ):
+                controller.apply_trigger_action(trigger.manual_stop())
+                manual_recording_stopped = True
             if controller is not None and time_sync is not None:
+                if controller.session_active:
+                    recorded_segments.extend(
+                        controller.maybe_flush_incremental(time_sync=time_sync)
+                    )
                 recorded_segments.extend(_flush_ready_segments(controller, time_sync, trigger))
             if with_monitoring:
                 from cam_acq.monitoring.yolo_thumb import sync_yolo_thumbnails
@@ -407,6 +524,32 @@ def run_live(
                     interval_sec=thumb_interval,
                 )
             time.sleep(1.0 / NOMINAL_FPS)
+    except Exception as exc:
+        partial = {
+            "schema_version": "1.0",
+            "status": "FAIL",
+            "exit_reason": "runtime_error",
+            "fatal_error": f"{type(exc).__name__}: {exc}",
+            "duration_sec": round(time.monotonic() - started, 3),
+            "cameras": [
+                {
+                    "camera_index": st.camera_index,
+                    "ip": st.ip,
+                    "frames_grabbed": st.frames_grabbed,
+                    "frames_pushed": st.frames_pushed,
+                    "open_error": st.open_error,
+                }
+                for st in stats_list
+            ],
+        }
+        if controller is not None:
+            partial["recording"] = {
+                "ring_stats": controller.ring_stats_report(),
+                "encode_errors": controller.encode_errors(),
+            }
+        _write_json_report(output_json, partial)
+        print(json.dumps(partial, indent=2))
+        raise
     finally:
         pipeline.stop()
         for t in threads:
@@ -429,6 +572,7 @@ def run_live(
         "duration_sec": round(elapsed, 3),
         "num_cameras": settings.num_cameras,
         "event_recording": event_recording,
+        "record_from_start": record_from_start,
         "resize": {
             "width": settings.resize_width,
             "height": settings.resize_height,
@@ -452,6 +596,8 @@ def run_live(
         ],
         "started_at": datetime.fromtimestamp(started_wall, tz=timezone.utc).isoformat(),
     }
+    if time_sync is not None:
+        report["time_sync"] = _time_sync_report(time_sync, camera_anchors)
     if need_recording and storage is not None and controller is not None:
         report["recording"] = {
             "buffer_sec": settings.recording_buffer_sec,
@@ -463,9 +609,23 @@ def run_live(
                 "primary_reject_reason": storage.primary_reject_reason,
             },
             "ring_memory_bytes": controller.memory_report(),
+            "flush_chunk_sec": controller.flush_chunk_sec,
+            "ring_stats": controller.ring_stats_report(),
             "segments": _segments_to_report(recorded_segments),
         }
-        if not recorded_segments and detection_bridge.trigger_decisions:
+        if record_from_start:
+            report["recording"]["record_stop_at_sec"] = stop_manual_at_sec
+            if manual_decision is not None:
+                report["recording"]["manual_trigger"] = manual_decision.as_dict()
+            seg_indices = {s.segment_index for s in recorded_segments}
+            report["recording"]["segment_count"] = len(seg_indices)
+            report["recording"]["max_segment_index"] = max(seg_indices) if seg_indices else -1
+        if record_from_start and not recorded_segments:
+            report["status"] = "FAIL"
+        elif not recorded_segments and detection_bridge.trigger_decisions:
+            report["status"] = "FAIL"
+        ring_stats = report["recording"]["ring_stats"]
+        if not ring_stats.get("healthy", True):
             report["status"] = "FAIL"
         if grab_errors:
             report["status"] = "FAIL"
@@ -476,8 +636,7 @@ def run_live(
         if cam["frames_pushed"] < min_pushed:
             report["status"] = "FAIL"
     if output_json:
-        output_json.parent.mkdir(parents=True, exist_ok=True)
-        output_json.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        _write_json_report(output_json, report)
     print(json.dumps(report, indent=2))
     return 0 if report["status"] == "PASS" else 1
 
@@ -498,6 +657,18 @@ def main() -> int:
         action="store_true",
         help="disable YOLO auto-trigger NVENC recording (manual REC via --with-monitoring still works)",
     )
+    parser.add_argument(
+        "--record-from-start",
+        action="store_true",
+        help="manual NVENC recording from pipeline start (no person trigger; use with --no-event-recording)",
+    )
+    parser.add_argument(
+        "--record-stop-at",
+        type=float,
+        default=None,
+        metavar="SEC",
+        help="manual_stop N seconds after start (default: duration-5); only with --record-from-start",
+    )
     parser.add_argument("--output", type=Path, default=None, help="JSON report path")
     parser.add_argument(
         "--with-monitoring",
@@ -507,6 +678,9 @@ def main() -> int:
     args = parser.parse_args()
 
     setup_galaxy_lib_path()
+    if args.record_stop_at is not None and not args.record_from_start:
+        print("--record-stop-at requires --record-from-start", file=sys.stderr)
+        return 1
     record = None if args.no_record else (args.record or Path("samples/deepstream_yolo_overlay_live_2ch.mp4"))
     return run_live(
         duration_sec=args.duration,
@@ -515,6 +689,8 @@ def main() -> int:
         output_json=args.output,
         event_recording=not args.no_event_recording,
         with_monitoring=args.with_monitoring,
+        record_from_start=args.record_from_start,
+        record_stop_at_sec=args.record_stop_at,
     )
 
 

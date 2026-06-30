@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 from cam_acq.camera.timestamp import (
     TimestampCameraReport,
@@ -127,18 +128,32 @@ class TimeSyncManager:
         timestamp_reset: bool = True,
         cross_camera_skew_tolerance_ms: int = 50,
     ) -> SessionTimeSync:
-        """Reset camera counters (optional), latch ts0, record host monotonic t0."""
+        """Reset camera counters (optional), latch ts0, record host monotonic t0.
+
+        When ``timestamp_reset`` is False, cameras are not opened here — call
+        ``reset_timestamp_on_open_cam`` from the grab thread after open.
+        """
         host_t0 = time.monotonic()
         host_wall = datetime.now(timezone.utc).isoformat()
 
         if timestamp_reset:
             reports = reset_all_timestamps(endpoints)
+            anchors = tuple(
+                self._anchor_from_report(ep, r) for ep, r in zip(endpoints, reports)
+            )
         else:
-            reports = [probe_timestamp_readonly(ep) for ep in endpoints]
+            anchors = tuple(
+                CameraTimeAnchor(
+                    camera_index=ep.index,
+                    ip=ep.ip,
+                    camera_ts0=None,
+                    tick_frequency_hz=None,
+                    reset_performed=False,
+                )
+                for ep in endpoints
+            )
+            reports = []
 
-        anchors = tuple(
-            self._anchor_from_report(ep, r) for ep, r in zip(endpoints, reports)
-        )
         skew_us = self._max_cross_camera_skew_us(anchors)
 
         return SessionTimeSync(
@@ -150,3 +165,37 @@ class TimeSyncManager:
             anchors=anchors,
             max_cross_camera_skew_us=skew_us,
         )
+
+
+def reset_timestamp_on_open_cam(cam: Any, endpoint: CameraEndpoint) -> CameraTimeAnchor:
+    """TimestampReset on an already-open camera (grab thread; no extra open/close)."""
+    from cam_acq.camera.timestamp import (
+        _feature_implemented,
+        _latch_timestamp,
+        _read_tick_frequency,
+        _send_timestamp_reset,
+    )
+
+    fc = cam.get_remote_device_feature_control()
+    tick_hz = _read_tick_frequency(cam, fc)
+    ts_before = _latch_timestamp(cam, fc)
+    reset_performed = False
+    reset_error: str | None = None
+    ts_after = ts_before
+    if not _feature_implemented(cam, fc, "TimestampReset"):
+        reset_error = "TimestampReset not implemented"
+    else:
+        try:
+            _send_timestamp_reset(cam, fc)
+            ts_after = _latch_timestamp(cam, fc)
+            reset_performed = True
+        except Exception as exc:
+            reset_error = str(exc)
+    return CameraTimeAnchor(
+        camera_index=endpoint.index,
+        ip=endpoint.ip,
+        camera_ts0=ts_after if reset_performed else ts_before,
+        tick_frequency_hz=tick_hz,
+        reset_performed=reset_performed,
+        reset_error=reset_error,
+    )
