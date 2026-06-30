@@ -52,8 +52,7 @@
 |------|-----|
 | NIC | 4ch |
 | Dashboard 최대 | 4채널 |
-| 현재 (2대) | `NUM_CAMERAS=2` |
-| 추후 (운영) | `NUM_CAMERAS=3` — `11_field_pending_work.md` §5 |
+| 현재 (운영) | `NUM_CAMERAS=3` — live·recording 검증 완료 (2026-06-30) |
 
 ## 5. 대역폭 추정 (로컬)
 

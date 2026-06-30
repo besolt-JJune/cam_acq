@@ -31,8 +31,8 @@
 | 항목                                       | 상태                           |
 | ---------------------------------------- | ---------------------------- |
 | Viewer 3대 연결                             | 완료                           |
-| Test env                                 | 카메라 **2대**                   |
-| 운영 환경                                    | 카메라 **3대**                   |
+| Test env (2ch PoC)                       | ✅ 완료 (2026-06-30)             |
+| 운영 환경                                    | 카메라 **3대** — live·recording 검증 완료 (2026-06-30) |
 | Jumbo/MTU                                | 설정 완료                        |
 | Socket buffer (`SetSocketBufferSize.sh`) | 적용 완료                         |
 | 네트워크 (4-port 직결)                        | `09_network_topology.md`       |
@@ -107,12 +107,12 @@
 
 | ID  | 작업                                                 |
 | --- | -------------------------------------------------- |
-| 2.1 | 3대 IP(0-based) 오픈, 4ch NIC                         | **대기** — `11_field_pending_work.md` §2.1 |
+| 2.1 | 3대 IP(0-based) 오픈, 4ch NIC                         | ✅ (2026-06-30) — cam0/1/2 online |
 | 2.2 | TimeSyncManager (host clock + `TimestampReset` 세션 앵커) | ✅ `grab_healthcheck` 연동 |
-| 2.3 | GigE offline recovery (grab + **yolo-live·recording**) | ✅ E2E PASS (2026-06-30, 3ch) — `11_field_pending_work.md` §2.3, `13_gige_disconnect_recovery.md` |
+| 2.3 | GigE offline recovery (grab + **yolo-live·recording**) | ✅ E2E PASS (2026-06-30, 3ch) — `13_gige_disconnect_recovery.md` |
 | 2.4 | `SetSocketBufferSize.sh` 적용                        | ✅ `socket_buffer_check` PASS (원격) |
-| 2.5 | 2대 PoC 병목 시 C grab 모듈 도입                           |
-| 2.6 | 1시간 soak test (`grab_healthcheck --duration 3600`) | ✅ 2대 PASS (22.98fps, drop 0) — 3대 재검증 대기 |
+| 2.5 | 2대 PoC 병목 시 C grab 모듈 도입                           | 보류 (3ch grab 병목 없음) |
+| 2.6 | 1시간 soak test (`grab_healthcheck --duration 3600`) | ✅ 2대 PASS — 3ch grab-only는 선택 (`11_field_pending_work.md` §3.3) |
 
 
 ---
@@ -122,16 +122,16 @@
 
 | ID  | 작업 | 코드 | 검증 (현장/테스트) |
 | --- | --------------------------------------- | --- | --- |
-| 3.1 | DeepStream multi-source 파이프라인 (**2ch**, live) | ✅ `cam-acq-yolo-live` | ✅ 2ch (2026-06-30) |
-| 3.2 | YOLOv8m → ONNX → TensorRT engine build (`batch=NUM_CAMERAS`) | ✅ | ✅ |
+| 3.1 | DeepStream multi-source 파이프라인 (live) | ✅ `cam-acq-yolo-live` | ✅ 3ch (2026-06-30) |
+| 3.2 | YOLOv8m → ONNX → TensorRT engine build (`batch=NUM_CAMERAS`) | ✅ | ✅ `batch=3` engine |
 | 3.3 | bbox 역변환 (resize → 원본 4K) | ✅ `bbox.py`, `events.py` | ✅ unit |
-| 3.4 | overlay 테스트 영상 저장 (live) | ✅ MP4 finalize·stride 수정 | ✅ `yolo_person_test.mp4` |
-| 3.5 | nvinfer meta → `RecordingTrigger` | ✅ `gst_meta.py` probe | ✅ pyds + walk-through (`yolo_person_test.json`) |
-| 3.6 | GPU debayer (Phase 3 경로) | ✅ `gpu_phase3` in yolo-live | ✅ 2ch (`gpu_phase3`, 2026-06-30) |
-| 3.x | **3ch 전환** (`NUM_CAMERAS=3`) | **추후** | `11_field_pending_work.md` §5 |
-| 3.y | per-camera 혼합 debayer (GPU 2 + CPU 1) | **추후 선택** | `12_debayer_3ch_strategy.md` §4 — §5 실측 FAIL 시에만 |
+| 3.4 | overlay 테스트 영상 저장 (live) | ✅ MP4 finalize·stride 수정 | ✅ 2ch `yolo_person_test.mp4`; **3ch 1h soak 추후** (`11_field_pending_work.md` §3.1) |
+| 3.5 | nvinfer meta → `RecordingTrigger` | ✅ `gst_meta.py` probe | ✅ 3ch event trigger (`yolo_live_3ch_gpu.json`) |
+| 3.6 | GPU debayer (Phase 3 경로) | ✅ `gpu_phase3` in yolo-live | ✅ 3ch ~20fps (`gpu_phase3`, 2026-06-30) |
+| 3.x | **3ch 전환** (`NUM_CAMERAS=3`) | ✅ | dashboard live + event recording |
+| 3.y | per-camera 혼합 debayer (GPU 2 + CPU 1) | 보류 | 3ch `gpu_phase3` PASS — 채택 안 함 |
 
-**Phase 3 (2ch) 현장 검증 완료 (2026-06-30).** 남음: 3ch 전환(§5), §6.7 YOLO→NVENC E2E — `11_field_pending_work.md`.
+**Phase 3 현장 검증 완료 (2026-06-30, 3ch).** 남음: 3ch YOLO 1h soak — `11_field_pending_work.md` §3.1.
 
 상세: `06_yolo_build_porting_guide.md`
 
@@ -143,14 +143,14 @@
 | ID  | 작업 | 코드 | 검증 |
 | --- | ------------------------------------------------ | --- | --- |
 | 4.1 | Full 4K Bayer pre-buffer (RAM ring) | ✅ `recording/buffer.py` | ✅ unit |
-| 4.2 | Bayer → debayer → NVENC | ✅ `recording/gst_encode.py` (`bayer2rgb` + `cudaupload` + `nvcuda*enc`) | `cam-acq-record-test` ✅ |
-| 4.3 | Human detection + auto trigger | ✅ `yolo-live` + `RecordingController` | **추후** (사람 walk-through E2E) |
-| 4.4 | Event 침묵 종료 + manual start/stop | ✅ `RecordingTrigger` + `RecordingController` | `cam-acq-record-test`, `tests/test_detection.py` |
-| 4.5 | Split recording | ✅ segment split in controller | `cam-acq-record-test` |
-| 4.6 | H.265 vs H.264 프로파일링 | **cam0 ✅** → **H.264** | `cam-acq-codec-profile` |
-| 4.7 | 메타데이터 (`.json` + `.frames.jsonl`) | ✅ `recording/metadata.py` | `cam-acq-record-test` |
-| 4.8 | StorageManager (FIFO, fallback) | ✅ `recording/storage.py` | ✅ unit |
-| 4.9 | RAM/VRAM 실측 | **2ch ✅**; **3ch 추후** (`11_field_pending_work.md` §6.9.2) | `cam-acq-memory-profile` |
+| 4.2 | Bayer → debayer → NVENC | ✅ `recording/gst_encode.py` (`bayer2rgb` + `cudaupload` + `nvcuda*enc`) | ✅ 3ch manual (`*_manual.mp4`, 2026-06-30) |
+| 4.3 | Human detection + auto trigger | ✅ `yolo-live` + `RecordingController` | ✅ 3ch event 녹화 (`152223_cam{0,1,2}_seg0000.mp4`) |
+| 4.4 | Event 침묵 종료 + manual start/stop | ✅ `RecordingTrigger` + `RecordingController` | ✅ 3ch 운영 중 event + manual |
+| 4.5 | Split recording | ✅ segment split in controller | ✅ 3ch `interval`·`gige_disconnect` split |
+| 4.6 | H.265 vs H.264 프로파일링 | **cam0 ✅** → **H.264** | cam0 단독 완료; **3ch 부하 재측정 추후** (`11_field_pending_work.md` §3.4) |
+| 4.7 | 메타데이터 (`.json` + `.frames.jsonl`) | ✅ `recording/metadata.py` | ✅ 3ch recordings |
+| 4.8 | StorageManager (FIFO, fallback) | ✅ `recording/storage.py` | ✅ unit + T7 FIFO_DELETE (2026-06-30) |
+| 4.9 | RAM/VRAM 실측 | **2ch ✅**; **3ch 추후** (`11_field_pending_work.md` §3.2) | `cam-acq-memory-profile` |
 
 
 #### 4.1 코덱 결정 절차 (H.265 vs H.264)
@@ -216,22 +216,22 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 ### Phase 6 — 통합 테스트
 
 
-| #   | 시나리오                       | 기대 결과                            |
-| --- | -------------------------- | -------------------------------- |
-| T1  | Human detection trigger 녹화 | 3채널 파일 생성                        |
-| T2  | 수동 start → stop              | `*_manual.mp4` + 메타 생성              |
-| T3  | Pre-buffer                 | 이벤트 **이전** 영상 포함 (`RECORDING_BUFFER_SEC`) |
-| T4  | Event 침묵 tail            | 마지막 person 검출 후 **연속** `RECORDING_BUFFER_SEC` 무검출 시 종료 |
-| T5  | Split interval             | 파일 분할 시간 일치                      |
-| T6  | 메타데이터                      | `.json` + `.frames.jsonl` 유효성    |
-| T7  | FIFO_DELETE                | 오래된 파일부터 삭제                      |
-| T8  | FIFO_REJECT                | 임계치 이후 저장 거부                     |
-| T9  | 카메라 disconnect | ✅ dashboard 재연결 + recording `gige_disconnect` split (2026-06-30, 3ch) — `13_gige_disconnect_recovery.md` |
-| T10 | TimeSync drift             | 세션 앵커·timestamp offset 로그          |
-| T14 | Host metrics API           | CPU/RAM/GPU/온도 `/api/system/metrics` 유효 |
-| T11 | 전 채널 동시 trigger            | 3개 파일 동시 생성                      |
-| T12 | Pre-buffer RAM 실측          | 32GB 이내 확인                       |
-| T13 | 녹화 영상 재생                   | debayer 후 H.26x 정상 재생 (색상 깨짐 없음) |
+| #   | 시나리오                       | 기대 결과 | 상태 (2026-06-30) |
+| --- | -------------------------- | -------------------------------- | --- |
+| T1  | Human detection trigger 녹화 | 3채널 파일 생성 | ✅ `152223_cam{0,1,2}_seg0000.mp4` |
+| T2  | 수동 start → stop              | `*_manual.mp4` + 메타 생성 | ✅ `152217_*_manual.mp4` ×3 |
+| T3  | Pre-buffer                 | 이벤트 **이전** 영상 포함 (`RECORDING_BUFFER_SEC`) | ✅ event recording 운영 중 |
+| T4  | Event 침묵 tail            | 마지막 person 검출 후 **연속** `RECORDING_BUFFER_SEC` 무검출 시 종료 | ✅ event recording 운영 중 |
+| T5  | Split interval             | 파일 분할 시간 일치 | ✅ `split.reason: interval` (300s) |
+| T6  | 메타데이터                      | `.json` + `.frames.jsonl` 유효성 | ✅ recordings 메타 존재 |
+| T7  | FIFO_DELETE                | 오래된 파일부터 삭제 | ✅ (`010304` manual 삭제 확인) |
+| T8  | FIFO_REJECT                | 임계치 이후 저장 거부 | ❌ 미구현 |
+| T9  | 카메라 disconnect | dashboard 재연결 + recording `gige_disconnect` split | ✅ 3ch — `13_gige_disconnect_recovery.md` |
+| T10 | TimeSync drift             | 세션 앵커·timestamp offset 로그 | ✅ 2ch 검증; 3ch 운영 중 |
+| T14 | Host metrics API           | CPU/RAM/GPU/온도 `/api/system/metrics` 유효 | ✅ `/api/health` PASS |
+| T11 | 전 채널 동시 trigger            | 3개 파일 동시 생성 | ✅ `152223` 동일 시각 3파일 |
+| T12 | Pre-buffer RAM 실측          | 32GB 이내 확인 | ⏳ `cam-acq-memory-profile` 3ch (`11_field_pending_work.md` §3.2) |
+| T13 | 녹화 영상 재생                   | debayer 후 H.26x 정상 재생 (색상 깨짐 없음) | ✅ 육안 확인 |
 
 
 ---
@@ -270,6 +270,6 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 | Bayer 직접 encode 시 색상 깨짐           | GPU debayer → NV12 → NVENC (필수) |
 | 3ch NVENC + YOLO VRAM             | Phase 4 코덱/프로파일링                |
 | PTP / 카메라 간 sync                  | PTP 미지원 → host clock + `TimestampReset` (`09_network_topology.md`) |
-| Test 2대 / 운영 3대                   | **현재 2대만 진행**; 3대는 `11_field_pending_work.md` §5 |
+| Test 2대 / 운영 3대                   | 3ch live·recording 완료; **1h soak·RAM 실측** — `11_field_pending_work.md` §3 |
 
 

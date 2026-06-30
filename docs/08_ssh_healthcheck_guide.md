@@ -186,7 +186,7 @@ scp user@cam-server:/path/to/cam_acq/samples/*.jpg ./
 | 1 | `timestamp_test --reset` | 세션 timestamp 앵커 확인 |
 | 1 | `--save-sample` | 육안 화질 확인 |
 | 2 | `--duration 3600` | 1시간 soak |
-| 2 | `NUM_CAMERAS=3` | **추후** — `11_field_pending_work.md` §5 |
+| 2 | `NUM_CAMERAS=3` | ✅ 3ch grab·YOLO live (2026-06-30); 1h soak 추후 — `11_field_pending_work.md` §3 |
 | 5+ | `GET /api/health` | Web 카메라·시스템 요약 |
 | 5+ | `GET /api/system/metrics` | CPU, RAM, GPU, 온도 |
 
@@ -222,6 +222,6 @@ Dashboard UI: `10_monitoring_design.md`
 
 - `00_project_plan.md` — Phase 1
 - `10_monitoring_design.md` — Dashboard, host metrics
-- `11_field_pending_work.md` — 현장 대기 (3대, recovery, 1h soak)
+- `11_field_pending_work.md` — 현장 대기 (3ch soak, RAM 실측)
 - `01_sdk_feasibility.md` — Demosaic
 - `04_install_guide.md` — Socket buffer
