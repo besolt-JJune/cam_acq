@@ -85,18 +85,23 @@ echo "pid=$!"
 **PASS 확인:** segment split(300s), `fps_live` 추이.  
 장시간 시 `ring_stats` overflow 가능 → §8.2.
 
-### 3.2 3ch RAM/VRAM 실측 (Phase 4.9.2) — §3.1과 동시
+### 3.2 3ch RAM/VRAM 실측 (Phase 4.9.2) — ✅ (2026-06-30)
+
+`RECORDING_BUFFER_SEC=2` 유지, 60s — **`15_3ch_resource_profiling.md` §2**.
+
+| 항목 | 결과 |
+|------|------|
+| Ring | 5.24 GB (3ch) |
+| RSS peak | 7.90 GB |
+| VRAM peak | 2815 MB |
+| T12 (32 GB) | PASS |
+| Ring overflow | trigger 후 grab>encode — `15_3ch_resource_profiling.md` §2.5 |
 
 ```bash
 source venv.sh
-NUM_CAMERAS=3 uv run cam-acq-memory-profile \
-  --output ./healthcheck/memory_profile_3ch.json
+uv run cam-acq-memory-profile --duration 60 --trigger-at 11 \
+  --output ./healthcheck/memory_profile_3ch_60s.json
 ```
-
-| 측정 | 조건 | 목적 |
-|------|------|------|
-| **필수** | 현행 `.env` (buffer 5s, 23fps) | 3ch ring·RSS·VRAM peak — `07_storage_capacity.md` §5.1 3ch 추정 검증 (Phase 6 **T12**) |
-| **선택** | buffer **2s**, fps **20** | 단축안 RAM — `07_storage_capacity.md` §5.3 시나리오 B |
 
 ### 3.3 grab-only 1h soak (3ch) — 선택
 
@@ -112,13 +117,7 @@ nohup uv run python -m cam_acq.tools.grab_healthcheck \
 ### 3.4 Phase 4.6 코덱 프로파일 (3ch 부하) — 추후
 
 cam0 단독 H.264/H.265 비교는 완료 → **H.264** 채택.  
-3ch + YOLO + NVENC 동시 조건 재측정은 §3.1 soak 이후.
-
-```bash
-source venv.sh
-uv run cam-acq-codec-profile --camera-index 0 \
-  --output ./healthcheck/codec_profile.json
-```
+3ch + YOLO + NVENC 동시 조건 재측정 — **`15_3ch_resource_profiling.md` §3** (R2).
 
 ---
 
@@ -181,10 +180,27 @@ fps가 soak 중 크게 하락할 때만 재검토.
 
 ---
 
-## 7. 관련 문서
+## 7. 운영 보강 (코드 작업 대기)
+
+로깅·진단 script·dashboard UI·리소스 peak·카메라 설정 영속화 — **`14_operations_enhancements.md`** (E1~E5).  
+`00_project_plan.md` Phase 7 표와 연동.
+
+| ID | 요약 |
+|----|------|
+| E1 | system log: WARNING+ 일별, pipeline / dashboard 분리 |
+| E2 | `scripts/save_raw_bmp.py` — raw + debayer BMP |
+| E3 | event 녹화 시 footer `post_buffer` → `event` |
+| E4 | 1시간 단위 resource peak — dashboard + JSONL (system log와 별도) |
+| E5 | camera setting 마지막 값 저장·기동 시 apply |
+
+---
+
+## 8. 관련 문서
 
 - `08_ssh_healthcheck_guide.md` — CLI 옵션, 리포트 형식
 - `09_network_topology.md` — 3대 NIC / IP
 - `12_debayer_3ch_strategy.md` — encode debayer, 3ch GPU 실측
+- `15_3ch_resource_profiling.md` — 3ch RAM/VRAM·코덱 실측 기록
 - `13_gige_disconnect_recovery.md` — GigE disconnect: dashboard 재연결, recording split/resume
+- `14_operations_enhancements.md` — 운영 보강 (E1~E5) 스펙
 - `00_project_plan.md` — Phase 계획

@@ -150,7 +150,7 @@
 | 4.6 | H.265 vs H.264 프로파일링 | **cam0 ✅** → **H.264** | cam0 단독 완료; **3ch 부하 재측정 추후** (`11_field_pending_work.md` §3.4) |
 | 4.7 | 메타데이터 (`.json` + `.frames.jsonl`) | ✅ `recording/metadata.py` | ✅ 3ch recordings |
 | 4.8 | StorageManager (FIFO, fallback) | ✅ `recording/storage.py` | ✅ unit + T7 FIFO_DELETE (2026-06-30) |
-| 4.9 | RAM/VRAM 실측 | **2ch ✅**; **3ch 추후** (`11_field_pending_work.md` §3.2) | `cam-acq-memory-profile` |
+| 4.9 | RAM/VRAM 실측 | **2ch ✅**; **3ch ✅** buffer 2s (`15_3ch_resource_profiling.md` §2) | `cam-acq-memory-profile` |
 
 
 #### 4.1 코덱 결정 절차 (H.265 vs H.264)
@@ -213,6 +213,22 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 
 ---
 
+### Phase 7 — 운영 보강 (계획)
+
+3ch 운영 안정화 이후 로깅·진단·UI·설정 영속성. 상세: `14_operations_enhancements.md`.
+
+
+| ID  | 작업 | 검증 |
+| --- | --- | --- |
+| 7.1 | System log — WARNING+ 일별, pipeline/dashboard 분리 | 로그 파일 경로·레벨 확인 |
+| 7.2 | Raw BMP(debayer) 저장 script (`scripts/`) | 샘플 BMP·raw 생성 |
+| 7.3 | Dashboard event 녹화 표시 (`event`) | event trigger 시 footer 문구 |
+| 7.4 | 시간당 system resource peak — dashboard + JSONL | 1h bucket·peak max |
+| 7.5 | 카메라 setting 영속화·기동 시 apply | 전원 cycle 후 설정 유지 |
+
+
+---
+
 ### Phase 6 — 통합 테스트
 
 
@@ -230,7 +246,7 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 | T10 | TimeSync drift             | 세션 앵커·timestamp offset 로그 | ✅ 2ch 검증; 3ch 운영 중 |
 | T14 | Host metrics API           | CPU/RAM/GPU/온도 `/api/system/metrics` 유효 | ✅ `/api/health` PASS |
 | T11 | 전 채널 동시 trigger            | 3개 파일 동시 생성 | ✅ `152223` 동일 시각 3파일 |
-| T12 | Pre-buffer RAM 실측          | 32GB 이내 확인 | ⏳ `cam-acq-memory-profile` 3ch (`11_field_pending_work.md` §3.2) |
+| T12 | Pre-buffer RAM 실측          | 32GB 이내 확인 | ✅ RSS 7.9 GB (`15_3ch_resource_profiling.md` §2) |
 | T13 | 녹화 영상 재생                   | debayer 후 H.26x 정상 재생 (색상 깨짐 없음) | ✅ 육안 확인 |
 
 
@@ -254,6 +270,8 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 | `10_monitoring_design.md`        | Dashboard, CPU/GPU 메트릭 |
 | `11_field_pending_work.md`       | 현장 대기 작업 (3대, recovery, 1h soak) |
 | `13_gige_disconnect_recovery.md` | GigE disconnect — dashboard 재연결, recording split/resume 스펙 |
+| `14_operations_enhancements.md`  | 운영 보강 — system log, BMP script, event UI, resource peak, camera params 영속 |
+| `15_3ch_resource_profiling.md`   | 3ch RAM/VRAM·코덱 실측 기록 |
 | `architecture.md`                | 아키텍처 diagram       |
 
 
@@ -270,6 +288,6 @@ HW encoding(NVENC) 전제. Phase 4 초기에 아래를 측정하고 결정한다
 | Bayer 직접 encode 시 색상 깨짐           | GPU debayer → NV12 → NVENC (필수) |
 | 3ch NVENC + YOLO VRAM             | Phase 4 코덱/프로파일링                |
 | PTP / 카메라 간 sync                  | PTP 미지원 → host clock + `TimestampReset` (`09_network_topology.md`) |
-| Test 2대 / 운영 3대                   | 3ch live·recording 완료; **1h soak·RAM 실측** — `11_field_pending_work.md` §3 |
+| Test 2대 / 운영 3대                   | 3ch live·recording·RAM 실측 완료; **1h soak·codec** — `15_3ch_resource_profiling.md` |
 
 

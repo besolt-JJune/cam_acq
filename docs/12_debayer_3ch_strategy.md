@@ -169,7 +169,7 @@ uv run cam-acq-yolo-live --duration 60 --no-record \
 
 ### 5.5 리소스 (녹화 동시) — **3ch 메모리 실측 추후**
 
-2ch 실측 완료 (`07_storage_capacity.md` §5.1). **3ch는 YOLO 1h soak과 동시** → `11_field_pending_work.md` §3.2.
+2ch 실측 완료 (`07_storage_capacity.md` §5.1). **3ch RAM 실측 완료** — `15_3ch_resource_profiling.md` §2 (buffer 2s, 60s).
 
 ```bash
 NUM_CAMERAS=3 uv run cam-acq-memory-profile \
@@ -244,6 +244,7 @@ DEBAYER_MODE=gpu_phase3 uv run cam-acq-yolo-live \
 | 문서 | 내용 |
 |------|------|
 | `architecture.md` | 시스템 흐름, encode debayer |
-| `11_field_pending_work.md` §5 | 3ch 현장 체크리스트 |
+| `11_field_pending_work.md` §3 | 3ch 현장 일정 |
+| `15_3ch_resource_profiling.md` | 3ch RAM/VRAM·코덱 실측 |
 | `01_sdk_feasibility.md` | SDK demosaic |
 | `06_yolo_build_porting_guide.md` | batch=N engine |
