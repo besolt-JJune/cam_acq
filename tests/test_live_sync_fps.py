@@ -12,7 +12,7 @@ def test_record_grab_frame_1s_window():
     st._fps_window_start = time.monotonic() - 1.05
     st._fps_window_frames = 23
     st.record_grab_frame()
-    _, _, _, window = st.monitoring_snapshot()
+    _, _, _, window, _ = st.monitoring_snapshot()
     assert len(window) == 1
     assert 18.0 < window[0] < 28.0
 

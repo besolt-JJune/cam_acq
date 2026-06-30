@@ -47,6 +47,17 @@
     .cam-meta { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
     .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; }
     .dot.online { background: var(--ok); } .dot.offline { background: var(--crit); } .dot.unknown { background: var(--muted); }
+    .conn-badge { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 0.15rem 0.55rem; border-radius: 4px; margin-left: 0.45rem; vertical-align: middle; letter-spacing: 0.02em; }
+    .conn-badge.connected { background: rgba(61, 214, 140, 0.18); color: var(--ok); }
+    .conn-badge.disconnected { background: rgba(243, 18, 96, 0.18); color: var(--crit); }
+    .conn-badge.unknown { background: rgba(139, 156, 179, 0.15); color: var(--muted); }
+    .cam-card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+    .net-recovery-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.75rem; margin-top: 0.75rem; }
+    .net-recovery-card { background: #141c28; border-radius: 8px; padding: 0.75rem 0.85rem; font-size: 0.85rem; }
+    .net-recovery-card h4 { margin: 0 0 0.5rem; font-size: 0.9rem; display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+    .net-stat-row { display: flex; justify-content: space-between; gap: 0.5rem; margin: 0.25rem 0; }
+    .net-stat-row strong { font-variant-numeric: tabular-nums; }
+    .net-err { color: var(--crit); font-size: 0.78rem; margin-top: 0.35rem; word-break: break-word; }
     footer { padding: 0 1.5rem 1.5rem; color: var(--muted); font-size: 0.85rem; }
     code { font-size: 0.8rem; }
     .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; align-items: center; justify-content: center; }
@@ -107,8 +118,9 @@
     </div>
     <section class="panel">
       <h2>네트워크 / TimeSync</h2>
-      <div id="net-list" class="sub">—</div>
-      <div id="timesync" class="sub" style="margin-top:0.5rem">—</div>
+      <div id="net-nic" class="sub">—</div>
+      <div id="net-recovery" class="net-recovery-grid"></div>
+      <div id="timesync" class="sub" style="margin-top:0.75rem">—</div>
     </section>
   </main>
   <footer>
@@ -195,6 +207,36 @@
       }
     }
 
+    function connectionBadge(conn) {
+      if (conn === "online") return { text: "Connected", cls: "connected", dot: "online" };
+      if (conn === "offline") return { text: "Disconnected", cls: "disconnected", dot: "offline" };
+      return { text: "Syncing…", cls: "unknown", dot: "unknown" };
+    }
+
+    function renderRecoveryNet(cameras) {
+      const el = document.getElementById("net-recovery");
+      if (!el) return;
+      if (!cameras || !cameras.length) {
+        el.innerHTML = '<p class="sub">카메라 데이터 없음</p>';
+        return;
+      }
+      el.innerHTML = cameras.map(c => {
+        const badge = connectionBadge(c.connection || "unknown");
+        const iface = c.interface ? `<div class="sub">NIC ${c.interface}</div>` : "";
+        const err = c.open_error
+          ? `<div class="net-err">${c.open_error}</div>` : "";
+        return `<div class="net-recovery-card">
+          <h4><span class="dot ${badge.dot}"></span>Cam ${c.camera_index} · ${c.ip}
+            <span class="conn-badge ${badge.cls}">${badge.text}</span></h4>
+          ${iface}
+          <div class="net-stat-row"><span>Recovery events</span><strong>${c.recovery_events ?? 0}</strong></div>
+          <div class="net-stat-row"><span>Reconnect OK</span><strong>${c.reconnect_success ?? 0}</strong></div>
+          <div class="net-stat-row"><span>Reconnect failed</span><strong>${c.reconnect_failed ?? 0}</strong></div>
+          ${err}
+        </div>`;
+      }).join("");
+    }
+
     function renderCameras(cameras) {
       lastCameras = cameras || [];
       const el = document.getElementById("cam-grid");
@@ -203,13 +245,13 @@
         return;
       }
       el.innerHTML = cameras.map(c => {
-        const conn = c.connection || "unknown";
+        const badge = connectionBadge(c.connection || "unknown");
         const fps = c.fps_live != null ? c.fps_live.toFixed(1) + " fps" : "— fps";
         const stream = features.stream
           ? `<div class="stream-wrap"><img id="stream-${c.camera_index}" src="/api/stream/${c.camera_index}" alt="cam${c.camera_index}"><canvas id="bbox-${c.camera_index}"></canvas></div>`
           : "";
         return `<div class="cam-card">
-          <h3><span class="dot ${conn}"></span>Cam ${c.camera_index} · ${c.ip}</h3>
+          <h3><span class="dot ${badge.dot}"></span>Cam ${c.camera_index} · ${c.ip}</h3>
           ${stream}
           <div class="cam-meta">
             <span>${fps}</span>
@@ -277,11 +319,12 @@
       document.getElementById("prebuf-val").textContent = fmtGb(pb.bytes_total) + (pb.source === "estimated" ? " (est.)" : "");
 
       renderCameras(data.cameras);
+      renderRecoveryNet(data.cameras);
       for (const c of (data.cameras || [])) drawBboxes(c.camera_index, c.detections);
 
       const nets = sys.network || [];
-      document.getElementById("net-list").textContent = nets.length
-        ? nets.map(n => n.name + ": ↓" + fmtRate(n.bytes_recv_per_sec) + " ↑" + fmtRate(n.bytes_sent_per_sec)).join(" · ")
+      document.getElementById("net-nic").textContent = nets.length
+        ? "NIC · " + nets.map(n => n.name + ": ↓" + fmtRate(n.bytes_recv_per_sec) + " ↑" + fmtRate(n.bytes_sent_per_sec)).join(" · ")
         : "NIC 미설정 (CAMERA*_INTERFACE)";
       const ts = data.timesync || {};
       document.getElementById("timesync").textContent = ts.available

@@ -31,7 +31,7 @@ def _connection_state(stats: GrabStats | None) -> str:
     """online | offline | unknown."""
     if stats is None:
         return "unknown"
-    if stats.open_error:
+    if stats.connection_offline or stats.open_error:
         return "offline"
     if stats.frames_received > 0:
         return "online"
@@ -68,6 +68,8 @@ def camera_payload(
                 "incomplete_frames": gs.incomplete_frames if gs else 0,
                 "timestamp_regressions": gs.timestamp_regressions if gs else 0,
                 "recovery_events": gs.recovery.offline_events if gs else 0,
+                "reconnect_success": gs.recovery.reconnect_success if gs else 0,
+                "reconnect_failed": gs.recovery.reconnect_failed if gs else 0,
                 "person_count": person_count,
                 "detections": detections,
                 "last_frame_id": gs.last_frame_id if gs else None,

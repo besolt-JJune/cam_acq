@@ -29,8 +29,22 @@ def write_session_json(
     storage_path: str,
     storage_fallback: bool,
     time_sync: dict[str, Any],
+    split_reason: str = "interval",
+    split_at_host_us: int | None = None,
+    offline_event_index: int | None = None,
 ) -> None:
     """Write segment session metadata JSON."""
+    split_block: dict[str, Any] = {
+        "reason": split_reason,
+        "interval_sec": split_interval_sec,
+        "segment_start_host_us": segment_start_host_us,
+        "segment_end_host_us": segment_end_host_us,
+    }
+    if split_reason == "gige_disconnect":
+        if split_at_host_us is not None:
+            split_block["at_host_us"] = split_at_host_us
+        if offline_event_index is not None:
+            split_block["offline_event_index"] = offline_event_index
     doc = {
         "schema_version": "1.0",
         "recording_id": str(uuid.uuid4()),
@@ -43,11 +57,7 @@ def write_session_json(
         "trigger": trigger.as_dict(),
         "buffer": {"pre_sec": buffer_sec, "post_sec": buffer_sec},
         "time_sync": time_sync,
-        "split": {
-            "interval_sec": split_interval_sec,
-            "segment_start_host_us": segment_start_host_us,
-            "segment_end_host_us": segment_end_host_us,
-        },
+        "split": split_block,
         "storage": {
             "active_path": storage_path,
             "is_fallback": storage_fallback,

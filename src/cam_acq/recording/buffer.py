@@ -184,3 +184,8 @@ class BayerRingBuffer:
     def memory_bytes(self) -> int:
         with self._lock:
             return sum(len(f.data) for f in self._frames)
+
+    def clear(self) -> None:
+        """Drop all retained frames (GigE disconnect: stale pre-buffer must not survive)."""
+        with self._lock:
+            self._frames.clear()

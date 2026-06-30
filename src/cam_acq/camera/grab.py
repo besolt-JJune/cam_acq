@@ -43,6 +43,7 @@ class GrabStats:
     timestamp_regressions: int = 0
     last_raw_image: Any = None
     open_error: str | None = None
+    connection_offline: bool = False
     fps_avg: float = 0.0
     fps_min: float = 0.0
     recovery: RecoveryStats = field(default_factory=RecoveryStats)

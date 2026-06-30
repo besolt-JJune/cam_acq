@@ -27,12 +27,13 @@ from cam_acq.camera.timesync import (
     TimeSyncManager,
     reset_timestamp_on_open_cam,
 )
-from cam_acq.config import NOMINAL_FPS, load_settings, project_root, setup_galaxy_lib_path
+from cam_acq.camera.recovery import RecoveryStats
+from cam_acq.config import NOMINAL_FPS, ensure_dir, load_settings, project_root, setup_galaxy_lib_path
 from cam_acq.detection.artifacts import validate_detection_engine
 from cam_acq.detection.events import RecordingTrigger
 from cam_acq.detection.nvinfer_config import write_nvinfer_config
 from cam_acq.recording.controller import RecordedSegment, RecordingController
-from cam_acq.recording.grab import run_camera_grab_loop
+from cam_acq.recording.grab import run_camera_grab_loop_with_recovery
 from cam_acq.recording.storage import StorageManager
 
 import numpy as np
@@ -48,6 +49,8 @@ class LiveFeedStats:
     frames_pushed: int = 0
     incomplete_frames: int = 0
     open_error: str | None = None
+    connection_offline: bool = False
+    recovery: RecoveryStats = field(default_factory=RecoveryStats)
     _fps_window: list[float] = field(default_factory=list, repr=False)
     _fps_window_start: float = 0.0
     _fps_window_frames: int = 0
@@ -103,14 +106,17 @@ class LiveFeedStats:
                 self._fps_window_start = now
                 self._fps_window_frames = 0
 
-    def monitoring_snapshot(self) -> tuple[int, int, str | None, list[float]]:
-        """Thread-safe counters for dashboard sync."""
+    def monitoring_snapshot(
+        self,
+    ) -> tuple[int, int, str | None, list[float], bool]:
+        """Thread-safe counters for dashboard sync (recovery: use self.recovery directly)."""
         with self._lock:
             return (
                 self.frames_grabbed,
                 self.incomplete_frames,
                 self.open_error,
                 list(self._fps_window),
+                self.connection_offline,
             )
 
 
@@ -120,12 +126,16 @@ def _grab_thread(
     stats: LiveFeedStats,
     controller: RecordingController | None,
     stop_at: float,
+    feature_backup_dir: Path,
+    recovery_retry_sec: float,
+    recovery_max_attempts: int,
     resize_w: int,
     resize_h: int,
     debayer_backend: DebayerBackend,
     bayer_format: str,
     param_store: RuntimeParamStore | None,
     on_camera_open: Callable[[Any, int], None] | None,
+    on_recovery_cycle: Callable[[], None] | None,
     errors: list[str],
 ) -> None:
     """One camera: Bayer ring (optional) + latest frame for DeepStream (RGB or Bayer)."""
@@ -139,11 +149,16 @@ def _grab_thread(
         stats.record_grab_frame()
         stats.set_latest_bayer(bayer)
 
+    def on_connection_offline(offline: bool) -> None:
+        stats.connection_offline = offline
+
     try:
-        run_camera_grab_loop(
+        run_camera_grab_loop_with_recovery(
             ip=ip,
             camera_index=stats.camera_index,
             stop_at=stop_at,
+            feature_backup_dir=feature_backup_dir,
+            recovery=stats.recovery,
             controller=controller,
             on_rgb_frame=None if use_gpu_debayer else on_rgb,
             on_bayer_frame=on_bayer if use_gpu_debayer else None,
@@ -153,10 +168,19 @@ def _grab_thread(
             bayer_format=bayer_format,
             param_store=param_store,
             on_camera_open=on_camera_open,
+            on_connection_offline=on_connection_offline,
+            on_recovery_cycle=on_recovery_cycle,
+            retry_interval_sec=recovery_retry_sec,
+            max_attempts=recovery_max_attempts,
             errors=errors,
         )
     except Exception as exc:
         stats.open_error = str(exc)
+        if stats.recovery.last_reconnect_error:
+            stats.open_error = stats.recovery.last_reconnect_error
+    if stats.recovery.last_reconnect_error and stats.open_error is None:
+        stats.open_error = stats.recovery.last_reconnect_error
+        stats.connection_offline = True
 
 
 def _segments_to_report(segments: list[RecordedSegment]) -> list[dict]:
@@ -375,6 +399,15 @@ def run_live(
     # ponytail: duration_sec <= 0 runs until KeyboardInterrupt (Ctrl+C)
     stop_at = float("inf") if duration_sec <= 0 else time.monotonic() + duration_sec
     grab_errors: list[str] = []
+    feature_backup_dir = ensure_dir(settings.gige_feature_backup_dir)
+
+    def _recovery_sync(st: LiveFeedStats) -> Callable[[], None] | None:
+        if hooks is None:
+            return None
+        from cam_acq.monitoring.live_sync import sync_live_camera_to_hooks
+
+        return lambda: sync_live_camera_to_hooks(hooks=hooks, st=st)
+
     threads = [
         threading.Thread(
             target=_grab_thread,
@@ -383,12 +416,16 @@ def run_live(
                 "stats": st,
                 "controller": controller,
                 "stop_at": stop_at,
+                "feature_backup_dir": feature_backup_dir,
+                "recovery_retry_sec": settings.gige_recovery_retry_sec,
+                "recovery_max_attempts": settings.gige_recovery_max_attempts,
                 "resize_w": settings.resize_width,
                 "resize_h": settings.resize_height,
                 "debayer_backend": settings.debayer_backend,
                 "bayer_format": settings.bayer_format,
                 "param_store": param_store,
                 "on_camera_open": on_camera_open,
+                "on_recovery_cycle": _recovery_sync(st),
                 "errors": grab_errors,
             },
             daemon=True,

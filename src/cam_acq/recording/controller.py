@@ -100,6 +100,10 @@ class RecordingController:
     _finalize_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _op_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
     _time_sync: SessionTimeSync | None = field(default=None, init=False, repr=False)
+    _camera_offline: dict[int, bool] = field(default_factory=dict, init=False, repr=False)
+    _prebuffer_floor_us: dict[int, int] = field(default_factory=dict, init=False, repr=False)
+    _resume_segment_index: dict[int, int] = field(default_factory=dict, init=False, repr=False)
+    _pending_split_meta: dict[int, dict[str, Any]] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         cap = recording_ring_capacity_frames(
@@ -118,6 +122,8 @@ class RecordingController:
 
     def push_raw(self, camera_index: int, raw_image: Any) -> bool:
         """Copy one frame into the camera ring; return False if incomplete."""
+        if self._camera_offline.get(camera_index):
+            return False
         host_us = int(time.monotonic() * 1_000_000)
         frame = raw_image_to_buffered_frame(raw_image, host_recv_us=host_us)
         if frame is None:
@@ -142,6 +148,52 @@ class RecordingController:
         bucket = self._frame_events.setdefault(event.camera_index, [])
         bucket.append(event)
         return None
+
+    def on_camera_offline(
+        self,
+        camera_index: int,
+        *,
+        at_host_us: int,
+        offline_event_index: int,
+    ) -> None:
+        """GigE disconnect: drain open segment, finalize with split reason, clear ring."""
+        self._camera_offline[camera_index] = True
+        with self._op_lock:
+            if (
+                self._pending is not None
+                and self._session_anchor_us is not None
+                and self._time_sync is not None
+            ):
+                self._drain_camera(
+                    camera_index,
+                    anchor_us=self._session_anchor_us,
+                    up_to_us=at_host_us,
+                    decision=self._pending,
+                    time_sync=self._time_sync,
+                    tick_frequency_hz=1_000_000_000,
+                    finalize_complete_segments=False,
+                )
+                open_seg = self._open_segments.get(camera_index)
+                if open_seg is not None:
+                    self._resume_segment_index[camera_index] = open_seg.segment_index + 1
+                    self._pending_split_meta[camera_index] = {
+                        "reason": "gige_disconnect",
+                        "at_host_us": at_host_us,
+                        "offline_event_index": offline_event_index,
+                    }
+                    self._finalize_open_segment(
+                        camera_index,
+                        decision=self._pending,
+                        time_sync=self._time_sync,
+                        tick_frequency_hz=1_000_000_000,
+                    )
+            self._rings[camera_index].clear()
+
+    def on_camera_reconnect(self, camera_index: int, *, at_host_us: int) -> None:
+        """GigE reconnect: accept frames after at_host_us only (no stale pre-buffer)."""
+        self._camera_offline[camera_index] = False
+        self._prebuffer_floor_us[camera_index] = at_host_us
+        self._rings[camera_index].clear()
 
     def _abort_open_segments(self) -> None:
         """Drop open encoders without writing (incomplete session abort)."""
@@ -322,7 +374,11 @@ class RecordingController:
         win_start = decision.started_at_host_us - pre_us
         win_end = decision.ended_at_host_us
         frames = {
-            idx: self._rings[idx].frames_in_host_window(win_start, win_end)
+            idx: [
+                f
+                for f in self._rings[idx].frames_in_host_window(win_start, win_end)
+                if f.host_recv_us >= self._prebuffer_floor_us.get(idx, 0)
+            ]
             for idx in decision.camera_indices
         }
         return decision, frames
@@ -423,20 +479,30 @@ class RecordingController:
         tick_frequency_hz: int,
         finalize_complete_segments: bool,
     ) -> list[RecordedSegment]:
+        if self._camera_offline.get(camera_index):
+            return []
+        floor = self._prebuffer_floor_us.get(camera_index, 0)
         wm = self._pushed_watermark_us.get(camera_index, anchor_us - 1)
         ring = self._rings[camera_index]
         frames = sorted(
             (
                 f
                 for f in ring.frames_in_host_window(wm + 1, up_to_us)
-                if f.host_recv_us > wm
+                if f.host_recv_us > wm and f.host_recv_us >= floor
             ),
             key=lambda f: f.host_recv_us,
         )
         out: list[RecordedSegment] = []
         for frame in frames:
-            seg_idx = segment_index_at(anchor_us, frame.host_recv_us, self.split_interval_sec)
-            seg_start, seg_end = segment_bounds_us(anchor_us, seg_idx, self.split_interval_sec)
+            forced = self._resume_segment_index.get(camera_index)
+            if forced is not None:
+                seg_idx = forced
+                self._resume_segment_index.pop(camera_index, None)
+                seg_start = frame.host_recv_us
+                seg_end = seg_start + int(self.split_interval_sec * 1_000_000)
+            else:
+                seg_idx = segment_index_at(anchor_us, frame.host_recv_us, self.split_interval_sec)
+                seg_start, seg_end = segment_bounds_us(anchor_us, seg_idx, self.split_interval_sec)
             open_seg = self._open_segments.get(camera_index)
             if open_seg is None or open_seg.segment_index != seg_idx:
                 if open_seg is not None:
@@ -566,6 +632,7 @@ class RecordingController:
         if open_seg is None:
             return
         open_seg.frames_file.close()
+        split_meta = self._pending_split_meta.pop(camera_index, None)
 
         def _work() -> None:
             try:
@@ -575,6 +642,7 @@ class RecordingController:
                     decision=decision,
                     time_sync=time_sync,
                     tick_frequency_hz=tick_frequency_hz,
+                    split_meta=split_meta,
                 )
                 if seg is not None:
                     with self._finalize_lock:
@@ -598,6 +666,7 @@ class RecordingController:
         decision: TriggerDecision,
         time_sync: SessionTimeSync,
         tick_frequency_hz: int,
+        split_meta: dict[str, Any] | None = None,
     ) -> RecordedSegment | None:
         """Blocking NVENC EOS + session metadata (runs off the main loop)."""
         if open_seg.frame_count < 1:
@@ -608,6 +677,13 @@ class RecordingController:
         open_seg.encoder.finalize()
         loc = self.storage.location
         ts_meta = _time_sync_meta(time_sync, tick_frequency_hz)
+        split_reason = "interval"
+        split_at_host_us: int | None = None
+        offline_event_index: int | None = None
+        if split_meta is not None:
+            split_reason = str(split_meta.get("reason", "interval"))
+            split_at_host_us = split_meta.get("at_host_us")
+            offline_event_index = split_meta.get("offline_event_index")
         write_session_json(
             open_seg.session_path,
             camera_index=camera_index,
@@ -625,6 +701,9 @@ class RecordingController:
             storage_path=str(loc.path),
             storage_fallback=loc.is_fallback,
             time_sync=ts_meta,
+            split_reason=split_reason,
+            split_at_host_us=split_at_host_us,
+            offline_event_index=offline_event_index,
         )
         return RecordedSegment(
             camera_index=camera_index,
